@@ -9,6 +9,7 @@ import { errorText, formatUnits } from "@/lib/format";
 import {
   COLLECTION_ROLE,
   COLLECTION_SETTING,
+  featureEnabled,
   hasBit,
   readCollectionProfile,
   readItemProfile,
@@ -122,9 +123,9 @@ function ProfileBody({
   itemError: string | null;
   onItemId: (value: string) => void;
 }) {
-  const transferable = hasBit(profile.settings, COLLECTION_SETTING.TransferableItems);
-  const editable = hasBit(profile.settings, COLLECTION_SETTING.UnlockedMetadata);
-  const depositRequired = hasBit(profile.settings, COLLECTION_SETTING.DepositRequired);
+  const transferable = featureEnabled(profile.settings, COLLECTION_SETTING.TransferableItems);
+  const editable = featureEnabled(profile.settings, COLLECTION_SETTING.UnlockedMetadata);
+  const depositRequired = featureEnabled(profile.settings, COLLECTION_SETTING.DepositRequired);
   const roles = profile.roles ?? 0;
 
   return (
@@ -171,8 +172,8 @@ function ProfileBody({
           <Flag
             label="Item deposit"
             value={depositRequired}
-            on="Minting reserves an item deposit from the signer"
-            off="Item deposit is not required by this setting"
+            on="The item deposit requirement is enabled"
+            off="The item deposit requirement is disabled on this collection"
           />
           <p className="text-xs leading-5 text-faint">
             Issuer {hasBit(roles, COLLECTION_ROLE.Issuer) ? "is set" : "is not set"} on the owner.

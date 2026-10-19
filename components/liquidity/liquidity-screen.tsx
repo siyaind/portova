@@ -6,6 +6,8 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
+import { optimalDeposit } from "@/lib/liquidity-math";
+import { txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
   applySlippage,
@@ -98,12 +100,10 @@ export function LiquidityScreen() {
       const result = await signAndSend(api, build(api), signer.address, (await injectedSigner(signer.source)).signer, (update) =>
         txs.patch(id, update),
       );
-      if (result.status === "failed") {
-        setMessage(result.error ?? "The transaction failed.");
-        return;
+      if (result.status === "finalized" || result.status === "included") {
+        if (refresh) await chain.refreshPools().catch(() => undefined);
       }
-      if (refresh) await chain.refreshPools().catch(() => undefined);
-      setMessage(result.status === "finalized" ? "Finalized." : "Included.");
+      setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
@@ -182,7 +182,7 @@ export function LiquidityScreen() {
           {pool ? (
             <>
               <p className="text-xs leading-5 text-faint">
-                {poolLabel(pool, maps.symbols)}. The pallet may use less than the desired amounts. Minimums use {slippage}% slippage. The first deposit locks {constants ? constants.mintMinLiquidity : "the chain minimum"} base units of the LP token.
+                {poolLabel(pool, maps.symbols)}. When reserves exist, the deposit is reduced to the pool ratio before {slippage}% slippage. Without reserves, the entered amounts are used and the pallet can still reject them. The first deposit locks {constants ? constants.mintMinLiquidity : "the chain minimum"} base units of the LP token.
               </p>
               <AmountField
                 label={assetLabel(pool.asset1, maps.symbols)}
@@ -254,14 +254,21 @@ export function LiquidityScreen() {
     }
     const desired1 = parseDecimalToPlanck(amount1, decimals1);
     const desired2 = parseDecimalToPlanck(amount2, decimals2);
-    const min1 = desired1 === null ? null : applySlippage(desired1, slippage);
-    const min2 = desired2 === null ? null : applySlippage(desired2, slippage);
-    if (!desired1 || !desired2 || desired1 <= BigInt(0) || desired2 <= BigInt(0) || !min1 || !min2 || min1 <= BigInt(0) || min2 <= BigInt(0)) {
+    if (!desired1 || !desired2) {
       setMessage("Enter amounts that stay above zero after slippage.");
       return;
     }
+    const reserve1 = pool.reserve1 && /^\d+$/.test(pool.reserve1) ? BigInt(pool.reserve1) : null;
+    const reserve2 = pool.reserve2 && /^\d+$/.test(pool.reserve2) ? BigInt(pool.reserve2) : null;
+    const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
+    const min1 = deposit ? applySlippage(deposit.amount1, slippage) : null;
+    const min2 = deposit ? applySlippage(deposit.amount2, slippage) : null;
+    if (!deposit || !min1 || !min2 || min1 <= BigInt(0) || min2 <= BigInt(0)) {
+      setMessage("The reserve ratio does not produce a deposit above zero, so nothing was signed.");
+      return;
+    }
     await sign("Add liquidity", (api) =>
-      buildAddLiquidity(api, pool, desired1, desired2, min1, min2, signer.address),
+      buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address),
     );
   }
 

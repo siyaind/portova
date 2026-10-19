@@ -111,6 +111,16 @@ NO-GO for mainnet and for any real-value liquidity.
 - The token page states that supply can increase while the issuer role is set.
 - Settings states that this build is local only.
 
+## Gate A remediation
+
+After the source audit of commit `6aa64ee`:
+
+- NFT collection and item settings now use pallet-nfts disabled bits. `DepositRequired` stays clear so ordinary `nfts.create` is not sent with the flag that upstream rejects as `WrongSetting`. A signed create has still not confirmed the runtime.
+- Swap quotes are bound to the pool, direction, amount, and block. The transaction uses a fresh node quote, not a previous amount.
+- Add-liquidity minimums follow the reserve ratio when reserves exist.
+- Marketplace listing scans no longer repeat on every block.
+- A signature that produces no hash, or a hash that is not included or finalized before the wait ends, is stored as that incomplete state. It is not labeled finalized.
+
 ## Further work
 
 Vesting, royalties, a hosted deploy, and mainnet stay out until a separate approval. Sale proceeds still are not moved into a pool. No extrinsic from phases 2–6 was submitted.

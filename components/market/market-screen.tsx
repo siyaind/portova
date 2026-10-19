@@ -8,6 +8,7 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
+import { txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
 import { readItemProfile } from "@/lib/nfts";
@@ -36,7 +37,7 @@ export function MarketScreen() {
     const api = chain.getApi();
     if (chain.status !== "live" || !api) return;
     setTrading(readTradingEnabled(api));
-  }, [chain, chain.status]);
+  }, [chain.status, chain.getApi]);
 
   useEffect(() => {
     const api = chain.getApi();
@@ -56,7 +57,7 @@ export function MarketScreen() {
     return () => {
       cancelled = true;
     };
-  }, [chain, chain.collections, chain.status]);
+  }, [chain.status, chain.collections, chain.getApi]);
 
   const tradingOff = trading === false;
   const idsValid = /^\d+$/.test(collectionId.trim()) && /^\d+$/.test(itemId.trim());
@@ -158,11 +159,8 @@ export function MarketScreen() {
       }
       txs.push({ id, label, status: "signing" });
       const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => txs.patch(id, update));
-      if (result.status === "failed") setMessage(result.error ?? "The transaction failed.");
-      else {
-        setMessage(result.status === "finalized" ? "Finalized." : "Included.");
-        await loadSale();
-      }
+      if (result.status === "finalized" || result.status === "included") await loadSale();
+      setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
