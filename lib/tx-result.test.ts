@@ -23,6 +23,8 @@ test("a missing hash is ambiguous rather than a failure", () => {
 test("a timed-out hash is reconciled from the chain result", () => {
   assert.equal(outcomeAfterWait({ hash: "0x11", sawIncluded: false, chain: "finalized" }).status, "finalized");
   assert.equal(outcomeAfterWait({ hash: "0x11", sawIncluded: true, chain: "pending" }).status, "submitted");
+  assert.equal(outcomeAfterWait({ hash: "0x11", sawIncluded: true, chain: "failed" }).status, "failed");
+  assert.equal(outcomeAfterWait({ hash: "0x11", sawIncluded: true, chain: "dispatch-unknown" }).status, "ambiguous");
   assert.equal(outcomeAfterWait({ hash: "0x11", sawIncluded: true, chain: "not-found" }).status, "ambiguous");
   assert.equal(outcomeAfterWait({ hash: "0x11", sawIncluded: true, chain: "unchecked" }).status, "included");
 });
