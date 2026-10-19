@@ -13,6 +13,7 @@ const ACTIONS = [
   { href: "/swap", label: "Swap" },
   { href: "/liquidity", label: "Liquidity" },
   { href: "/market", label: "Marketplace" },
+  { href: "/run", label: "Testnet run" },
   { href: "/studio", label: "Creator studio" },
 ];
 
