@@ -16,6 +16,7 @@ import {
   type CreateMintParams,
 } from "@/lib/assets";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
+import { txResultMessage } from "@/lib/tx-result";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 
 const FIELD =
@@ -205,8 +206,12 @@ export function CreateTokenForm() {
         setFormError(result.error ?? "The transaction failed.");
         return;
       }
-      await chain.refreshAssets();
-      if (result.status === "finalized") router.push(`/token/${params.id}`);
+      if (result.status === "finalized" || result.status === "included") await chain.refreshAssets();
+      if (result.status === "finalized") {
+        router.push(`/token/${params.id}`);
+        return;
+      }
+      setFormError(txResultMessage(result.status, result.error));
     } catch (cause) {
       const message = errorText(cause);
       setFormError(message);

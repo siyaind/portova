@@ -129,19 +129,54 @@ export async function signAndSend(
   onUpdate: (update: TxUpdate) => void,
   decorate?: (result: { events?: ChainEvent[] }) => Partial<TxUpdate>,
 ): Promise<TxUpdate> {
+  const signWaitMs = 180_000;
+  const statusWaitMs = 120_000;
   return new Promise((resolve, reject) => {
     let settled = false;
     let unsubscribe: (() => void) | null = null;
+    let lastHash: string | undefined;
+    let sawIncluded = false;
+    let statusTimer: ReturnType<typeof setTimeout> | null = null;
+    const signTimer = setTimeout(() => {
+      if (!lastHash) {
+        finish({
+          status: "failed",
+          error: "No transaction hash arrived before the wait ended.",
+        });
+      }
+    }, signWaitMs);
     const finish = (update: TxUpdate) => {
       if (settled) return;
       settled = true;
+      clearTimeout(signTimer);
+      if (statusTimer !== null) clearTimeout(statusTimer);
       unsubscribe?.();
       onUpdate(update);
       resolve(update);
     };
+    const armStatusWait = (hash: string) => {
+      if (statusTimer !== null) return;
+      statusTimer = setTimeout(() => {
+        finish(
+          sawIncluded
+            ? {
+                status: "included",
+                hash,
+                error: "Included. Finalization was not reported before the wait ended.",
+              }
+            : {
+                status: "submitted",
+                hash,
+                error: "The node has not reported inclusion. The hash is not a final result.",
+              },
+        );
+      }, statusWaitMs);
+    };
 
     tx.signAndSend(address, { signer }, (result) => {
       const hash = result.txHash.toHex();
+      lastHash = hash;
+      armStatusWait(hash);
       const extra = () => {
         try {
           return decorate?.(result) ?? {};
@@ -163,6 +198,7 @@ export async function signAndSend(
         return;
       }
       if (result.status.isInBlock) {
+        sawIncluded = true;
         onUpdate({ status: "included", hash, ...extra() });
         return;
       }
@@ -185,6 +221,8 @@ export async function signAndSend(
       .catch((error: unknown) => {
         if (!settled) {
           settled = true;
+          clearTimeout(signTimer);
+          if (statusTimer !== null) clearTimeout(statusTimer);
           reject(error);
         }
       });

@@ -7,6 +7,8 @@ import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
+import { swapQuoteKey } from "@/lib/liquidity-math";
+import { txResultMessage } from "@/lib/tx-result";
 import {
   applySlippage,
   assetDecimals,
@@ -40,7 +42,7 @@ export function SwapScreen() {
   const [flip, setFlip] = useState(false);
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
-  const [quote, setQuote] = useState<string | null>(null);
+  const [quote, setQuote] = useState<{ key: string; out: string } | null>(null);
   const [quoteState, setQuoteState] = useState<"idle" | "reading" | "none" | "ready" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,10 +53,15 @@ export function SwapScreen() {
   const decimalsIn = assetIn ? assetDecimals(assetIn, maps.decimals) : null;
   const amountIn = decimalsIn === null ? null : parseDecimalToPlanck(amount, decimalsIn);
   const usable = pool ? reservesUsable(pool) : false;
+  const quoteKey =
+    pool && amountIn && amountIn > BigInt(0)
+      ? swapQuoteKey(pool.lpToken, flip, amountIn.toString(), chain.blockNumber)
+      : "";
+  const liveQuote = quote && quote.key === quoteKey && quoteState === "ready" ? quote.out : null;
 
   useEffect(() => {
     const api = chain.getApi();
-    if (!api || !pool || !assetIn || !assetOut || !usable || !amountIn || amountIn <= BigInt(0)) {
+    if (!api || !pool || !assetIn || !assetOut || !usable || !quoteKey || !amountIn) {
       setQuote(null);
       setQuoteState(usable ? "idle" : "none");
       return;
@@ -65,20 +72,23 @@ export function SwapScreen() {
       void quoteExactIn(api, assetIn, assetOut, amountIn)
         .then((next) => {
           if (cancelled) return;
-          setQuote(next);
+          setQuote(next ? { key: quoteKey, out: next } : null);
           setQuoteState(next ? "ready" : "none");
         })
         .catch(() => {
-          if (!cancelled) setQuoteState("error");
+          if (!cancelled) {
+            setQuote(null);
+            setQuoteState("error");
+          }
         });
     }, 300);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [amountIn, assetIn, assetOut, chain, pool, usable]);
+  }, [amountIn, assetIn, assetOut, chain.getApi, pool, quoteKey, usable]);
 
-  const minimum = quote && /^\d+$/.test(quote) ? applySlippage(BigInt(quote), slippage) : null;
+  const minimum = liveQuote && /^\d+$/.test(liveQuote) ? applySlippage(BigInt(liveQuote), slippage) : null;
 
   async function onSwap() {
     setMessage(null);
@@ -86,12 +96,20 @@ export function SwapScreen() {
       await wallet.connect();
       return;
     }
-    if (!pool || !assetIn || !assetOut || !usable || !amountIn || !minimum || minimum <= BigInt(0)) {
-      setMessage("A swap needs a pool reserve and a quote from the node.");
+    if (!pool || !assetIn || !assetOut || !usable || !amountIn || !liveQuote || !minimum || minimum <= BigInt(0)) {
+      setMessage("A swap needs a pool reserve and a quote that matches this amount.");
       return;
     }
     const api = chain.getApi();
     if (!api) return;
+    const fresh = await quoteExactIn(api, assetIn, assetOut, amountIn);
+    const freshMin = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), slippage) : null;
+    if (!freshMin || freshMin <= BigInt(0)) {
+      setQuote(null);
+      setQuoteState("none");
+      setMessage("The node did not return a quote for this amount, so nothing was signed.");
+      return;
+    }
     const id = crypto.randomUUID();
     setBusy(true);
     txs.push({ id, label: `Swap ${poolLabel(pool, maps.symbols)}`, status: "signing" });
@@ -99,13 +117,10 @@ export function SwapScreen() {
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
-      const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, minimum, signer.address);
+      const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, freshMin, signer.address);
       const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => txs.patch(id, update));
-      if (result.status === "failed") setMessage(result.error ?? "The swap failed.");
-      else {
-        await chain.refreshPools().catch(() => undefined);
-        setMessage(result.status === "finalized" ? "Swap finalized." : "Swap included.");
-      }
+      if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
+      setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
@@ -177,8 +192,8 @@ export function SwapScreen() {
               <QuoteLines
                 pool={pool}
                 usable={usable}
-                quoteState={quoteState}
-                quote={quote}
+                quoteState={liveQuote ? "ready" : quoteState === "ready" ? "reading" : quoteState}
+                quote={liveQuote}
                 minimum={minimum}
                 assetOut={assetOut}
                 decimals={maps.decimals}
@@ -187,7 +202,7 @@ export function SwapScreen() {
               ) : null}
               <button
                 type="button"
-                disabled={busy || !usable || quoteState !== "ready"}
+                disabled={busy || !usable || !liveQuote}
                 onClick={() => void onSwap()}
                 className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
               >

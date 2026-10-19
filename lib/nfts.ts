@@ -1,19 +1,13 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { TxUpdate } from "@/lib/assets";
 
-export const COLLECTION_SETTING = {
-  TransferableItems: 1,
-  UnlockedMetadata: 2,
-  UnlockedAttributes: 4,
-  UnlockedMaxSupply: 8,
-  DepositRequired: 16,
-} as const;
-
-export const ITEM_SETTING = {
-  Transferable: 1,
-  UnlockedMetadata: 2,
-  UnlockedAttributes: 4,
-} as const;
+export {
+  COLLECTION_SETTING,
+  ITEM_SETTING,
+  disabledCollectionSettings,
+  disabledItemSettings,
+  featureEnabled,
+} from "@/lib/nft-settings";
 
 export const COLLECTION_ROLE = {
   Issuer: 1,

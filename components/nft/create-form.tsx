@@ -7,13 +7,14 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
+import { txResultMessage } from "@/lib/tx-result";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
-  COLLECTION_SETTING,
-  ITEM_SETTING,
   buildCollectionMintTx,
   byteDeposit,
   createdCollectionUpdate,
+  disabledCollectionSettings,
+  disabledItemSettings,
   predictCollectionId,
   readNftConstants,
   type CollectionMintParams,
@@ -104,13 +105,15 @@ export function CreateCollectionForm() {
       ? {
           admin: signer?.address ?? FEE_ACCOUNT,
           collectionId: predicted,
-          settings:
-            (transferable ? COLLECTION_SETTING.TransferableItems : 0) +
-            (editableMetadata ? COLLECTION_SETTING.UnlockedMetadata : 0) +
-            COLLECTION_SETTING.DepositRequired,
-          itemSettings:
-            (transferable ? ITEM_SETTING.Transferable : 0) +
-            (editableMetadata ? ITEM_SETTING.UnlockedMetadata : 0),
+          settings: disabledCollectionSettings({
+            transferable,
+            metadataEditable: editableMetadata,
+            lockMaxSupply: supplyNumber !== null,
+          }),
+          itemSettings: disabledItemSettings({
+            transferable,
+            metadataEditable: editableMetadata,
+          }),
           maxSupply: supplyNumber,
           publicMint,
           price: publicMint ? priceRaw : null,
@@ -238,11 +241,15 @@ export function CreateCollectionForm() {
         setFormError(result.error ?? "The transaction failed.");
         return;
       }
-      await chain.refreshCollections().catch(() => undefined);
+      if (result.status === "finalized" || result.status === "included") {
+        await chain.refreshCollections().catch(() => undefined);
+      }
       const collectionId = result.collectionId ?? String(signed.collectionId);
       if (result.status === "finalized") {
         router.push(`/collection/${collectionId}?item=${signed.itemId}`);
+        return;
       }
+      setFormError(txResultMessage(result.status, result.error));
     } catch (cause) {
       const message = errorText(cause);
       setFormError(message);
@@ -358,8 +365,12 @@ export function CreateCollectionForm() {
             {itemUri.trim() ? <li>nfts.setMetadata</li> : null}
           </ol>
           <p className="text-sm leading-6 text-muted">
-            Wrapped in utility.batchAll. {editableMetadata ? "Metadata stays editable." : "Metadata is locked after this transaction."}{" "}
+            Wrapped in utility.batchAll. The runtime stores these settings as disabled features.
+            Disabled bits {params ? params.settings : "—"}. DepositRequired stays clear, so the ordinary
+            create call still reserves the collection deposit.{" "}
+            {editableMetadata ? "Metadata stays editable." : "Metadata is locked after this transaction."}{" "}
             {transferable ? "Items can be transferred." : "Items cannot be transferred."}{" "}
+            {supplyNumber !== null ? "The max supply is locked." : "No max supply is set."}{" "}
             {publicMint ? "Minting is public." : "Only the issuer can mint."}
           </p>
           <dl className="space-y-3 text-sm">
