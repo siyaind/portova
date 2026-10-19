@@ -120,7 +120,7 @@ After the source audit of commit `6aa64ee`:
 - Add-liquidity minimums follow the reserve ratio when reserves exist.
 - Marketplace listing scans no longer repeat on every block.
 - A signature that produces no hash stays unknown. A hash in a block is finalized only after `system.ExtrinsicSuccess` is read. `system.ExtrinsicFailed` is a failure. Open hashes are checked again on later blocks.
-- No signed testnet extrinsic has been submitted, so the metadata lock sequence and the creator flows are still unproven on chain. Marketplace trading stays disabled while `Nfts.Features` is 0. Creator Studio remains one browser record. There is no indexer.
+- `/run` asks the connected Substrate wallet to sign a token batch, an NFT batch, a pool, liquidity, and a swap as separate transactions. It records a hash only after the node returns one. No signed testnet extrinsic has been submitted from this workspace, so those steps are still unproven on chain. Marketplace trading stays disabled while `Nfts.Features` is 0. Creator Studio remains one browser record. There is no indexer.
 
 ## Further work
 
