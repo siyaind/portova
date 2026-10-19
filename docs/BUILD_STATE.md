@@ -119,7 +119,8 @@ After the source audit of commit `6aa64ee`:
 - Swap quotes are bound to the pool, direction, amount, and block. The transaction uses a fresh node quote, not a previous amount.
 - Add-liquidity minimums follow the reserve ratio when reserves exist.
 - Marketplace listing scans no longer repeat on every block.
-- A signature that produces no hash, or a hash that is not included or finalized before the wait ends, is stored as that incomplete state. It is not labeled finalized.
+- A signature that produces no hash stays unknown. A hash in a block is finalized only after `system.ExtrinsicSuccess` is read. `system.ExtrinsicFailed` is a failure. Open hashes are checked again on later blocks.
+- No signed testnet extrinsic has been submitted, so the metadata lock sequence and the creator flows are still unproven on chain. Marketplace trading stays disabled while `Nfts.Features` is 0. Creator Studio remains one browser record. There is no indexer.
 
 ## Further work
 

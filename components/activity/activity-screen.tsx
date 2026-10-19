@@ -14,37 +14,44 @@ export function ActivityScreen() {
   const chain = useChain();
   const txs = useTxs();
   const [trading, setTrading] = useState<boolean | null>(null);
-  const reconciled = useRef(new Set<string>());
+  const checking = useRef(new Set<string>());
 
   useEffect(() => {
     const api = chain.getApi();
-    if (!txs.ready || chain.status !== "live" || !api) return;
-    const pending = txs.items.filter(
+    if (!txs.ready || chain.status !== "live" || !api || !chain.blockNumber) return;
+    const open = txs.items.filter(
       (item) =>
         isExtrinsicHash(item.hash) &&
         (item.status === "submitted" || item.status === "included" || item.status === "ambiguous") &&
-        !reconciled.current.has(item.id),
+        !checking.current.has(item.id),
     );
-    if (pending.length === 0) return;
-    for (const item of pending) reconciled.current.add(item.id);
-    for (const item of pending) {
+    if (open.length === 0) return;
+    let cancelled = false;
+    for (const item of open) {
       const hash = item.hash;
       if (!isExtrinsicHash(hash)) continue;
+      checking.current.add(item.id);
       void reconcileExtrinsic(api, hash)
         .then((found) => {
-          if (found === "unchecked") return;
+          if (cancelled || found === "unchecked") return;
           const next = outcomeAfterWait({
             hash,
             sawIncluded: item.status === "included",
             chain: found,
           });
-          if (next.status !== item.status) {
+          if (next.status !== item.status || next.error !== item.error) {
             txs.patch(item.id, { status: next.status, hash: next.hash, error: next.error });
           }
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          checking.current.delete(item.id);
+        });
     }
-  }, [txs, chain.status, chain]);
+    return () => {
+      cancelled = true;
+    };
+  }, [txs, chain.status, chain.blockNumber, chain]);
 
   useEffect(() => {
     const api = chain.getApi();
@@ -57,7 +64,7 @@ export function ActivityScreen() {
       <PageIntro
         eyebrow="Activity"
         title="Transaction evidence"
-        body="This page lists extrinsics submitted from this browser. A hash is shown only after the node returned one. A stored hash is checked against the node pool and recent blocks. A missing hash stays unknown and is not treated as a failed transaction. Indexed history and EVM receipts stay unavailable."
+        body="This page lists extrinsics submitted from this browser. A hash is shown only after the node returned one. Open hashes are checked again on later blocks. Finalized means the extrinsic was in a finalized block and that block contained system.ExtrinsicSuccess. system.ExtrinsicFailed is a failure. A missing hash stays unknown. Indexed history and EVM receipts stay unavailable."
       />
       <Panel>
         <div className="border-b border-line px-4 py-3">

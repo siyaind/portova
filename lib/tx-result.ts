@@ -1,6 +1,13 @@
 export type TxStatus = "signing" | "submitted" | "included" | "finalized" | "failed" | "ambiguous";
 
-export type ChainMatch = "pending" | "finalized" | "included" | "not-found" | "unchecked";
+export type ChainMatch =
+  | "pending"
+  | "finalized"
+  | "included"
+  | "failed"
+  | "dispatch-unknown"
+  | "not-found"
+  | "unchecked";
 
 export function txResultMessage(status: TxStatus, error?: string | null): string {
   if (status === "failed") return error || "The transaction failed.";
@@ -26,6 +33,20 @@ export function outcomeAfterWait(input: {
     return {
       status: "ambiguous",
       error: "No transaction hash was returned. The outcome is unknown, and this is not proof the transaction failed.",
+    };
+  }
+  if (input.chain === "failed") {
+    return {
+      status: "failed",
+      hash: input.hash,
+      error: "The block contains system.ExtrinsicFailed for this extrinsic.",
+    };
+  }
+  if (input.chain === "dispatch-unknown") {
+    return {
+      status: "ambiguous",
+      hash: input.hash,
+      error: "The extrinsic is in a block, but system.ExtrinsicSuccess was not read. It is not marked successful.",
     };
   }
   if (input.chain === "finalized") return { status: "finalized", hash: input.hash };
