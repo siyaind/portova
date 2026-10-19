@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { TxPhase } from "@/lib/assets";
+import { statusWithoutHash } from "@/lib/tx-result";
 
 const STORAGE_KEY = "portova.session-txs.v1";
 const LIMIT = 12;
@@ -22,7 +23,7 @@ type TxValue = {
   patch: (id: string, update: Partial<TrackedTx>) => void;
 };
 
-const PHASES = new Set<TxPhase>(["signing", "submitted", "included", "finalized", "failed"]);
+const PHASES = new Set<TxPhase>(["signing", "submitted", "included", "finalized", "failed", "ambiguous"]);
 
 const TxContext = createContext<TxValue | null>(null);
 
@@ -32,6 +33,7 @@ export function txStatusLabel(status: string): string {
   if (status === "included") return "Included";
   if (status === "finalized") return "Finalized";
   if (status === "failed") return "Failed";
+  if (status === "ambiguous") return "Unknown";
   return "Unknown";
 }
 
@@ -83,8 +85,8 @@ function settleStale(item: TrackedTx): TrackedTx {
   if ((item.status === "signing" || item.status === "submitted") && !item.hash) {
     return {
       ...item,
-      status: "failed",
-      error: "The page closed before the node returned a hash.",
+      status: statusWithoutHash(item.status),
+      error: "No transaction hash was returned. The outcome is unknown, and this is not proof the transaction failed.",
     };
   }
   return item;

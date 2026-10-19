@@ -13,8 +13,7 @@ import {
   buildCollectionMintTx,
   byteDeposit,
   createdCollectionUpdate,
-  disabledCollectionSettings,
-  disabledItemSettings,
+  collectionMintSteps,
   predictCollectionId,
   readNftConstants,
   type CollectionMintParams,
@@ -105,15 +104,8 @@ export function CreateCollectionForm() {
       ? {
           admin: signer?.address ?? FEE_ACCOUNT,
           collectionId: predicted,
-          settings: disabledCollectionSettings({
-            transferable,
-            metadataEditable: editableMetadata,
-            lockMaxSupply: supplyNumber !== null,
-          }),
-          itemSettings: disabledItemSettings({
-            transferable,
-            metadataEditable: editableMetadata,
-          }),
+          transferable,
+          metadataEditable: editableMetadata,
           maxSupply: supplyNumber,
           publicMint,
           price: publicMint ? priceRaw : null,
@@ -127,8 +119,8 @@ export function CreateCollectionForm() {
   const paramKey = params
     ? [
         params.collectionId,
-        params.settings,
-        params.itemSettings,
+        params.transferable,
+        params.metadataEditable,
         params.maxSupply ?? "",
         params.publicMint,
         params.price?.toString() ?? "",
@@ -359,16 +351,19 @@ export function CreateCollectionForm() {
         <Panel className="space-y-4 p-4">
           <h2 className="text-sm font-medium">What will be signed</h2>
           <ol className="list-decimal space-y-2 pl-4 text-sm text-muted">
-            <li>nfts.create</li>
-            <li>nfts.setCollectionMetadata</li>
-            <li>nfts.mint</li>
-            {itemUri.trim() ? <li>nfts.setMetadata</li> : null}
+            {collectionMintSteps({
+              transferable,
+              metadataEditable: editableMetadata,
+              lockMaxSupply: supplyNumber !== null && supplyValid,
+              hasItemMetadata: itemUri.trim().length > 0,
+            }).map((step) => (
+              <li key={step.call}>{mintStepLabel(step.call)}</li>
+            ))}
           </ol>
           <p className="text-sm leading-6 text-muted">
-            Wrapped in utility.batchAll. The runtime stores these settings as disabled features.
-            Disabled bits {params ? params.settings : "—"}. DepositRequired stays clear, so the ordinary
-            create call still reserves the collection deposit.{" "}
-            {editableMetadata ? "Metadata stays editable." : "Metadata is locked after this transaction."}{" "}
+            Wrapped in utility.batchAll. Collection and item metadata are written while they are still
+            editable. {editableMetadata ? "Metadata stays editable." : "Metadata is locked after those writes, in the same batch."}{" "}
+            DepositRequired stays clear, so the ordinary create call still reserves the collection deposit.{" "}
             {transferable ? "Items can be transferred." : "Items cannot be transferred."}{" "}
             {supplyNumber !== null ? "The max supply is locked." : "No max supply is set."}{" "}
             {publicMint ? "Minting is public." : "Only the issuer can mint."}
@@ -396,6 +391,15 @@ export function CreateCollectionForm() {
       </form>
     </div>
   );
+}
+
+function mintStepLabel(call: string): string {
+  if (call === "create") return "nfts.create";
+  if (call === "setCollectionMetadata") return "nfts.setCollectionMetadata";
+  if (call === "mint") return "nfts.mint";
+  if (call === "setItemMetadata") return "nfts.setMetadata";
+  if (call === "lockCollection") return "nfts.lockCollection";
+  return "nfts.lockItemProperties";
 }
 
 function show(value: string | null | undefined): string {

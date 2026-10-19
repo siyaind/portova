@@ -1,9 +1,11 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { TxUpdate } from "@/lib/assets";
+import { collectionMintSteps } from "@/lib/nft-settings";
 
 export {
   COLLECTION_SETTING,
   ITEM_SETTING,
+  collectionMintSteps,
   disabledCollectionSettings,
   disabledItemSettings,
   featureEnabled,
@@ -26,8 +28,8 @@ export type NftConstants = {
 export type CollectionMintParams = {
   admin: string;
   collectionId: number;
-  settings: number;
-  itemSettings: number;
+  transferable: boolean;
+  metadataEditable: boolean;
   maxSupply: number | null;
   publicMint: boolean;
   price: bigint | null;
@@ -121,29 +123,45 @@ export async function predictCollectionId(api: ApiPromise): Promise<number> {
 }
 
 export function buildCollectionMintTx(api: ApiPromise, params: CollectionMintParams) {
-  const calls = [
-    api.tx.nfts.create(params.admin, {
-      settings: params.settings,
-      maxSupply: params.maxSupply,
-      mintSettings: {
-        mintType: params.publicMint ? "Public" : "Issuer",
-        price: params.price,
-        startBlock: null,
-        endBlock: null,
-        defaultItemSettings: params.itemSettings,
-      },
-    }),
-    api.tx.nfts.setCollectionMetadata(params.collectionId, params.collectionMetadata),
-    api.tx.nfts.mint(
-      params.collectionId,
-      params.itemId,
-      params.mintTo,
-      params.price === null ? null : { ownedItem: null, mintPrice: params.price },
-    ),
-  ];
-  if (params.itemMetadata) {
-    calls.push(api.tx.nfts.setMetadata(params.collectionId, params.itemId, params.itemMetadata));
-  }
+  const steps = collectionMintSteps({
+    transferable: params.transferable,
+    metadataEditable: params.metadataEditable,
+    lockMaxSupply: params.maxSupply !== null,
+    hasItemMetadata: params.itemMetadata !== null,
+  });
+  const calls = steps.map((step) => {
+    if (step.call === "create") {
+      return api.tx.nfts.create(params.admin, {
+        settings: step.settings,
+        maxSupply: params.maxSupply,
+        mintSettings: {
+          mintType: params.publicMint ? "Public" : "Issuer",
+          price: params.price,
+          startBlock: null,
+          endBlock: null,
+          defaultItemSettings: step.itemSettings,
+        },
+      });
+    }
+    if (step.call === "setCollectionMetadata") {
+      return api.tx.nfts.setCollectionMetadata(params.collectionId, params.collectionMetadata);
+    }
+    if (step.call === "mint") {
+      return api.tx.nfts.mint(
+        params.collectionId,
+        params.itemId,
+        params.mintTo,
+        params.price === null ? null : { ownedItem: null, mintPrice: params.price },
+      );
+    }
+    if (step.call === "setItemMetadata") {
+      return api.tx.nfts.setMetadata(params.collectionId, params.itemId, params.itemMetadata);
+    }
+    if (step.call === "lockCollection") {
+      return api.tx.nfts.lockCollection(params.collectionId, step.lockSettings);
+    }
+    return api.tx.nfts.lockItemProperties(params.collectionId, params.itemId, step.lockMetadata, step.lockAttributes);
+  });
   return api.tx.utility.batchAll(calls);
 }
 
