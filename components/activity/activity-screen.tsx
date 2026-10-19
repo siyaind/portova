@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChain } from "@/components/chain/chain-provider";
 import { isExtrinsicHash, txStatusLabel, useTxs, type TrackedTx } from "@/components/tx/tx-tracker";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { readTradingEnabled } from "@/lib/market";
+import { reconcileExtrinsic } from "@/lib/tx-reconcile";
+import { outcomeAfterWait } from "@/lib/tx-result";
 import { NODE_CONSOLE } from "@/lib/network";
 import { BUILD_CALLS } from "@/lib/reconciliation";
 
@@ -12,6 +14,37 @@ export function ActivityScreen() {
   const chain = useChain();
   const txs = useTxs();
   const [trading, setTrading] = useState<boolean | null>(null);
+  const reconciled = useRef(new Set<string>());
+
+  useEffect(() => {
+    const api = chain.getApi();
+    if (!txs.ready || chain.status !== "live" || !api) return;
+    const pending = txs.items.filter(
+      (item) =>
+        isExtrinsicHash(item.hash) &&
+        (item.status === "submitted" || item.status === "included" || item.status === "ambiguous") &&
+        !reconciled.current.has(item.id),
+    );
+    if (pending.length === 0) return;
+    for (const item of pending) reconciled.current.add(item.id);
+    for (const item of pending) {
+      const hash = item.hash;
+      if (!isExtrinsicHash(hash)) continue;
+      void reconcileExtrinsic(api, hash)
+        .then((found) => {
+          if (found === "unchecked") return;
+          const next = outcomeAfterWait({
+            hash,
+            sawIncluded: item.status === "included",
+            chain: found,
+          });
+          if (next.status !== item.status) {
+            txs.patch(item.id, { status: next.status, hash: next.hash, error: next.error });
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [txs, chain.status, chain]);
 
   useEffect(() => {
     const api = chain.getApi();
@@ -24,7 +57,7 @@ export function ActivityScreen() {
       <PageIntro
         eyebrow="Activity"
         title="Transaction evidence"
-        body="This page lists extrinsics submitted from this browser. A hash is shown only after the node returned one. The stored status is not queried again after a reload. Indexed history and EVM receipts stay unavailable. Phases 2–6 submitted no hash."
+        body="This page lists extrinsics submitted from this browser. A hash is shown only after the node returned one. A stored hash is checked against the node pool and recent blocks. A missing hash stays unknown and is not treated as a failed transaction. Indexed history and EVM receipts stay unavailable."
       />
       <Panel>
         <div className="border-b border-line px-4 py-3">
@@ -91,7 +124,7 @@ export function ActivityScreen() {
 
 function SessionRow({ item }: { item: TrackedTx }) {
   const tone =
-    item.status === "finalized" ? "ok" : item.status === "failed" ? "bad" : "warn";
+    item.status === "finalized" ? "ok" : item.status === "failed" ? "bad" : item.status === "ambiguous" ? "warn" : "warn";
   return (
     <li className="border-b border-line px-4 py-3 last:border-0">
       <div className="flex flex-wrap items-center justify-between gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
@@ -46,6 +46,7 @@ export function SwapScreen() {
   const [quoteState, setQuoteState] = useState<"idle" | "reading" | "none" | "ready" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   const pool = pools?.[poolIndex] ?? null;
   const assetIn = pool ? (flip ? pool.asset2 : pool.asset1) : null;
@@ -101,31 +102,36 @@ export function SwapScreen() {
       return;
     }
     const api = chain.getApi();
-    if (!api) return;
-    const fresh = await quoteExactIn(api, assetIn, assetOut, amountIn);
-    const freshMin = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), slippage) : null;
-    if (!freshMin || freshMin <= BigInt(0)) {
-      setQuote(null);
-      setQuoteState("none");
-      setMessage("The node did not return a quote for this amount, so nothing was signed.");
-      return;
-    }
-    const id = crypto.randomUUID();
+    if (!api || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
-    txs.push({ id, label: `Swap ${poolLabel(pool, maps.symbols)}`, status: "signing" });
+    let tracked: string | null = null;
     try {
+      const fresh = await quoteExactIn(api, assetIn, assetOut, amountIn);
+      const freshMin = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), slippage) : null;
+      if (!freshMin || freshMin <= BigInt(0)) {
+        setQuote(null);
+        setQuoteState("none");
+        setMessage("The node did not return a quote for this amount, so nothing was signed.");
+        return;
+      }
+      tracked = crypto.randomUUID();
+      txs.push({ id: tracked, label: `Swap ${poolLabel(pool, maps.symbols)}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, freshMin, signer.address);
-      const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => txs.patch(id, update));
+      const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => {
+        if (tracked) txs.patch(tracked, update);
+      });
       if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
-      txs.patch(id, { status: "failed", error: text });
+      if (tracked) txs.patch(tracked, { status: "failed", error: text });
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

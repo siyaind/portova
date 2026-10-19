@@ -115,7 +115,7 @@ NO-GO for mainnet and for any real-value liquidity.
 
 After the source audit of commit `6aa64ee`:
 
-- NFT collection and item settings now use pallet-nfts disabled bits. `DepositRequired` stays clear so ordinary `nfts.create` is not sent with the flag that upstream rejects as `WrongSetting`. A signed create has still not confirmed the runtime.
+- NFT collection and item settings now use pallet-nfts disabled bits. `DepositRequired` stays clear so ordinary `nfts.create` is not sent with the flag that upstream rejects as `WrongSetting`. Metadata is written before `lockCollection` and `lockItemProperties`. A signed create has still not confirmed the runtime.
 - Swap quotes are bound to the pool, direction, amount, and block. The transaction uses a fresh node quote, not a previous amount.
 - Add-liquidity minimums follow the reserve ratio when reserves exist.
 - Marketplace listing scans no longer repeat on every block.

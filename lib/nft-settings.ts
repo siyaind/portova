@@ -20,24 +20,56 @@ export const ITEM_SETTING = {
  */
 export function disabledCollectionSettings(input: {
   transferable: boolean;
-  metadataEditable: boolean;
   lockMaxSupply: boolean;
 }): number {
   let bits = 0;
   if (!input.transferable) bits += COLLECTION_SETTING.TransferableItems;
-  if (!input.metadataEditable) bits += COLLECTION_SETTING.UnlockedMetadata;
   if (input.lockMaxSupply) bits += COLLECTION_SETTING.UnlockedMaxSupply;
   return bits;
 }
 
-export function disabledItemSettings(input: {
-  transferable: boolean;
-  metadataEditable: boolean;
-}): number {
+export function disabledItemSettings(input: { transferable: boolean }): number {
   let bits = 0;
   if (!input.transferable) bits += ITEM_SETTING.Transferable;
-  if (!input.metadataEditable) bits += ITEM_SETTING.UnlockedMetadata;
   return bits;
+}
+
+export type MintStep =
+  | { call: "create"; settings: number; itemSettings: number }
+  | { call: "setCollectionMetadata" }
+  | { call: "mint" }
+  | { call: "setItemMetadata" }
+  | { call: "lockCollection"; lockSettings: number }
+  | { call: "lockItemProperties"; lockMetadata: true; lockAttributes: false };
+
+/**
+ * setCollectionMetadata and setMetadata fail once UnlockedMetadata is disabled.
+ * Create and mint leave metadata editable, write the URIs, then lock.
+ */
+export function collectionMintSteps(input: {
+  transferable: boolean;
+  metadataEditable: boolean;
+  lockMaxSupply: boolean;
+  hasItemMetadata: boolean;
+}): MintStep[] {
+  const steps: MintStep[] = [
+    {
+      call: "create",
+      settings: disabledCollectionSettings(input),
+      itemSettings: disabledItemSettings(input),
+    },
+    { call: "setCollectionMetadata" },
+    { call: "mint" },
+  ];
+  if (input.hasItemMetadata) steps.push({ call: "setItemMetadata" });
+  if (!input.metadataEditable) {
+    steps.push({
+      call: "lockCollection",
+      lockSettings: COLLECTION_SETTING.UnlockedMetadata,
+    });
+    steps.push({ call: "lockItemProperties", lockMetadata: true, lockAttributes: false });
+  }
+  return steps;
 }
 
 export function featureEnabled(settings: number | null, disabledBit: number): boolean | null {

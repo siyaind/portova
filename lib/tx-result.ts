@@ -1,14 +1,70 @@
-export function txResultMessage(
-  status: "signing" | "submitted" | "included" | "finalized" | "failed",
-  error?: string | null,
-): string {
+export type TxStatus = "signing" | "submitted" | "included" | "finalized" | "failed" | "ambiguous";
+
+export type ChainMatch = "pending" | "finalized" | "included" | "not-found" | "unchecked";
+
+export function txResultMessage(status: TxStatus, error?: string | null): string {
   if (status === "failed") return error || "The transaction failed.";
   if (status === "finalized") return "Finalized.";
+  if (status === "ambiguous") {
+    return error || "The outcome is unknown. This is not proof the transaction failed.";
+  }
   if (status === "included") {
-    return error || "Included. Finalization was not reported before the wait ended.";
+    return error || "Included. Finalization was not confirmed on chain.";
   }
   if (status === "submitted") {
-    return error || "Submitted. Inclusion was not reported. This is not a final result.";
+    return error || "Submitted. Inclusion was not confirmed on chain. This is not a final result.";
   }
   return "Waiting for the wallet.";
+}
+
+export function outcomeAfterWait(input: {
+  hash?: string;
+  sawIncluded: boolean;
+  chain: ChainMatch;
+}): { status: TxStatus; hash?: string; error?: string } {
+  if (!input.hash) {
+    return {
+      status: "ambiguous",
+      error: "No transaction hash was returned. The outcome is unknown, and this is not proof the transaction failed.",
+    };
+  }
+  if (input.chain === "finalized") return { status: "finalized", hash: input.hash };
+  if (input.chain === "included") {
+    return {
+      status: "included",
+      hash: input.hash,
+      error: "The extrinsic is in a block that is not finalized yet.",
+    };
+  }
+  if (input.chain === "pending") {
+    return {
+      status: "submitted",
+      hash: input.hash,
+      error: "The extrinsic is still in the node pool. Inclusion was not reported.",
+    };
+  }
+  if (input.chain === "not-found") {
+    return {
+      status: "ambiguous",
+      hash: input.hash,
+      error: "The hash was not in the node pool or the recent blocks. The outcome was not determined.",
+    };
+  }
+  if (input.sawIncluded) {
+    return {
+      status: "included",
+      hash: input.hash,
+      error: "Included. A later check against the chain did not finish, so finalization is not confirmed.",
+    };
+  }
+  return {
+    status: "submitted",
+    hash: input.hash,
+    error: "Submitted. A later check against the chain did not finish. This is not a final result.",
+  };
+}
+
+export function statusWithoutHash(status: TxStatus): TxStatus {
+  if (status === "signing" || status === "submitted") return "ambiguous";
+  return status;
 }

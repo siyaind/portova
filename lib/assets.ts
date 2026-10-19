@@ -1,5 +1,7 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { Signer } from "@polkadot/types/types";
+import { reconcileExtrinsic } from "@/lib/tx-reconcile";
+import { outcomeAfterWait } from "@/lib/tx-result";
 
 export type AssetConstants = {
   assetDeposit: string;
@@ -20,7 +22,7 @@ export type CreateMintParams = {
   supply: bigint;
 };
 
-export type TxPhase = "signing" | "submitted" | "included" | "finalized" | "failed";
+export type TxPhase = "signing" | "submitted" | "included" | "finalized" | "failed" | "ambiguous";
 
 export type TxUpdate = {
   status: TxPhase;
@@ -138,12 +140,7 @@ export async function signAndSend(
     let sawIncluded = false;
     let statusTimer: ReturnType<typeof setTimeout> | null = null;
     const signTimer = setTimeout(() => {
-      if (!lastHash) {
-        finish({
-          status: "failed",
-          error: "No transaction hash arrived before the wait ended.",
-        });
-      }
+      if (!lastHash) finish(outcomeAfterWait({ sawIncluded: false, chain: "unchecked" }));
     }, signWaitMs);
     const finish = (update: TxUpdate) => {
       if (settled) return;
@@ -157,19 +154,13 @@ export async function signAndSend(
     const armStatusWait = (hash: string) => {
       if (statusTimer !== null) return;
       statusTimer = setTimeout(() => {
-        finish(
-          sawIncluded
-            ? {
-                status: "included",
-                hash,
-                error: "Included. Finalization was not reported before the wait ended.",
-              }
-            : {
-                status: "submitted",
-                hash,
-                error: "The node has not reported inclusion. The hash is not a final result.",
-              },
-        );
+        void reconcileExtrinsic(api, hash)
+          .then((chain) => {
+            if (!settled) finish(outcomeAfterWait({ hash, sawIncluded, chain }));
+          })
+          .catch(() => {
+            if (!settled) finish(outcomeAfterWait({ hash, sawIncluded, chain: "unchecked" }));
+          });
       }, statusWaitMs);
     };
 
