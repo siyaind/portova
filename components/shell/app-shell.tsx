@@ -15,7 +15,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   return (
-    <div className="min-h-screen bg-bg text-ink">
+    <div className="shell min-h-screen text-ink">
+      <div className="atmosphere" aria-hidden>
+        <span />
+        <span />
+      </div>
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-panel focus:px-3 focus:py-2"
@@ -23,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-[#0c0d11] lg:flex">
+        <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-white/8 bg-[#0c0d11]/75 backdrop-blur-xl lg:flex">
           <Brand />
           <SidebarNav />
         </aside>
@@ -42,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="absolute inset-0 bg-black/70"
             onClick={() => setNavOpen(false)}
           />
-          <aside className="relative flex h-full w-[min(100%,18rem)] flex-col border-r border-line bg-[#0c0d11]">
+          <aside className="relative flex h-full w-[min(100%,18rem)] flex-col border-r border-white/8 bg-[#0c0d11]/90 backdrop-blur-xl">
             <div className="flex items-center justify-between pr-3">
               <Brand />
               <button

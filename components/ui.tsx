@@ -12,7 +12,7 @@ export function Button({
 }: ButtonProps) {
   const styles =
     variant === "primary"
-      ? "bg-violet text-violet-ink hover:brightness-110 disabled:hover:brightness-100"
+      ? "bg-violet text-violet-ink shadow-[0_0_24px_rgb(141_125_255/0.28)] hover:brightness-110 disabled:hover:brightness-100"
       : "border border-line bg-panel text-ink hover:bg-panel-2";
   return (
     <button
@@ -31,7 +31,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`min-w-0 max-w-full overflow-hidden rounded-xl border border-line bg-panel ${className}`}>
+    <section className={`min-w-0 max-w-full overflow-hidden rounded-2xl border border-white/10 bg-panel/80 shadow-[0_20px_60px_rgb(0_0_0/0.28)] backdrop-blur-md ${className}`}>
       {children}
     </section>
   );
@@ -47,7 +47,7 @@ export function PageIntro({
   body: string;
 }) {
   return (
-    <header className="max-w-2xl">
+    <header className="rise max-w-2xl">
       <p className="text-xs font-medium tracking-[0.14em] text-violet uppercase">
         {eyebrow}
       </p>
