@@ -74,8 +74,12 @@ export function SubstrateWalletProvider({
         setAccounts([]);
         setSelected(null);
         setStatus("missing");
+        const injected = (window as Window & { injectedWeb3?: Record<string, unknown> }).injectedWeb3;
+        const extensionInstalled = Boolean(injected && Object.keys(injected).length > 0);
         setError(
-          "The connection request was closed, or no wallet extension answered. Choose Connect again. If no extension is installed, install Polkadot.js, Talisman, or SubWallet.",
+          extensionInstalled
+            ? "A wallet request is still open. Close it in the extension, then choose Connect again."
+            : "No wallet extension answered. Install Polkadot.js, Talisman, or SubWallet, then reload this page.",
         );
         return;
       }
