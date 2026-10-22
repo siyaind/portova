@@ -50,7 +50,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
 
   return (
     <>
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-bg px-3 sm:gap-3 sm:px-4">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-white/8 bg-[#07080c]/70 px-3 backdrop-blur-xl sm:gap-3 sm:px-4">
       <button
         type="button"
         className="rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink lg:hidden"

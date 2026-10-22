@@ -122,6 +122,16 @@ After the source audit of commit `6aa64ee`:
 - A signature that produces no hash stays unknown. A hash in a block is finalized only after `system.ExtrinsicSuccess` is read. `system.ExtrinsicFailed` is a failure. Open hashes are checked again on later blocks.
 - `/run` asks the connected Substrate wallet to sign a token batch, an NFT batch, a pool, liquidity, and a swap as separate transactions. It records a hash only after the node returns one. No signed testnet extrinsic has been submitted from this workspace, so those steps are still unproven on chain. Marketplace trading stays disabled while `Nfts.Features` is 0. Creator Studio remains one browser record. There is no indexer.
 
+## Research before hosting, vesting, royalties, and charts
+
+Checked on 2026-10-21 against Portaldot’s own posts and the V3 testnet guide.
+
+- Portaldot announced V3.0 mainnet around 16 October 2026. This app still has no verified V3 mainnet RPC, so a public demo stays on the testnet endpoints.
+- Native NFTs are the runtime `nfts` pallet. The testnet guide describes collection settings, transfers, and attributes. It does not describe a royalty field. PORTOVA must not invent a royalty percent.
+- Native vesting in the earlier runtime probe covers tPOT only. A creator-token vesting schedule is not available as a tested pallet call.
+- No public indexer was found for this testnet. A chart can be drawn only from reserves and quotes the node returns for a live pool. Historical volume stays unavailable.
+- A hosted site can be a static deployment of this Next.js app. It still needs the user’s wallet extension. Hosting does not add mainnet, royalties, or an indexer.
+
 ## Further work
 
 Vesting, royalties, a hosted deploy, and mainnet stay out until a separate approval. Sale proceeds still are not moved into a pool. No extrinsic from phases 2–6 was submitted.

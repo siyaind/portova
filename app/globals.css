@@ -25,8 +25,82 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-bg);
+  background: #07080c;
   color: var(--color-ink);
+}
+
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(920px 520px at 8% -8%, rgb(141 125 255 / 0.28), transparent 62%),
+    radial-gradient(780px 460px at 100% 0%, rgb(122 166 255 / 0.18), transparent 58%),
+    radial-gradient(640px 420px at 70% 110%, rgb(61 190 139 / 0.08), transparent 55%);
+}
+
+.atmosphere span {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(40px);
+  opacity: 0.55;
+  animation: drift 32s ease-in-out infinite alternate;
+}
+
+.atmosphere span:first-child {
+  top: -8rem;
+  left: 10%;
+  width: 28rem;
+  height: 18rem;
+  background: rgb(141 125 255 / 0.35);
+}
+
+.atmosphere span:last-child {
+  right: -6rem;
+  bottom: 10%;
+  width: 24rem;
+  height: 16rem;
+  background: rgb(122 166 255 / 0.22);
+  animation-duration: 40s;
+  animation-direction: alternate-reverse;
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+}
+
+.rise {
+  animation: rise 0.6s ease both;
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-4%, 6%, 0) scale(1.08);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atmosphere span,
+  .rise {
+    animation: none;
+  }
 }
 
 button,
