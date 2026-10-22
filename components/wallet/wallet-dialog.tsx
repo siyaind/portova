@@ -38,7 +38,7 @@ export function WalletDialog({
     connection.isConnected && connection.chainId !== CHAIN_ID;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
       <button
         type="button"
         aria-label="Dismiss wallet dialog"
@@ -50,9 +50,9 @@ export function WalletDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative max-h-[min(40rem,calc(100vh-2rem))] w-full max-w-lg overflow-y-auto rounded-xl border border-line bg-panel p-5"
+        className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-line bg-panel"
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
             <h2 id={titleId} className="text-lg font-semibold">
               Wallets
@@ -71,8 +71,9 @@ export function WalletDialog({
             Close
           </button>
         </div>
+        <div className="overflow-y-auto px-5 py-4">
 
-        <section className="mt-5 border-t border-line pt-4">
+        <section>
           <h3 className="text-sm font-medium">Substrate wallet</h3>
           <p className="mt-1 text-xs leading-5 text-faint">
             Polkadot.js, Talisman, or SubWallet. Balances for the selected
@@ -187,6 +188,7 @@ export function WalletDialog({
             )}
           </div>
         </section>
+        </div>
       </div>
     </div>
   );
