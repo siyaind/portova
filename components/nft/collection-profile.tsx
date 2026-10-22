@@ -4,29 +4,38 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useChain } from "@/components/chain/chain-provider";
+import { useTxs } from "@/components/tx/tx-tracker";
+import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
+import { signAndSend } from "@/lib/assets";
 import { errorText, formatUnits } from "@/lib/format";
 import {
   COLLECTION_ROLE,
   COLLECTION_SETTING,
   featureEnabled,
   hasBit,
+  buildMintItem,
   readCollectionProfile,
   readItemProfile,
   type CollectionProfile,
   type ItemProfile,
 } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 
 export function CollectionProfile({ id }: { id: string }) {
   const chain = useChain();
   const search = useSearchParams();
-  const initialItem = search.get("item") ?? "";
+  const queryItem = search.get("item") ?? "";
   const [profile, setProfile] = useState<CollectionProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [itemId, setItemId] = useState(initialItem);
+  const [itemId, setItemId] = useState(queryItem);
   const [item, setItem] = useState<ItemProfile | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (/^\d+$/.test(queryItem)) setItemId(queryItem);
+  }, [queryItem]);
 
   useEffect(() => {
     if (!/^\d+$/.test(id)) {
@@ -211,6 +220,7 @@ function ProfileBody({
             />
           </label>
         </form>
+        <MintAnother profile={profile} />
         <div className="px-4 pb-4 text-sm">
           {itemError ? <p className="text-warn">{itemError}</p> : null}
           {!itemId ? <p className="text-muted">Enter an item id to read that item.</p> : null}
@@ -229,6 +239,81 @@ function ProfileBody({
         </div>
       </Panel>
     </div>
+  );
+}
+
+function MintAnother({ profile }: { profile: CollectionProfile }) {
+  const chain = useChain();
+  const wallet = useSubstrateWallet();
+  const txs = useTxs();
+  const signer = wallet.selected;
+  const [itemId, setItemId] = useState("");
+  const [to, setTo] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (signer && to === "") setTo(signer.address);
+  }, [signer, to]);
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!signer) {
+      await wallet.connect();
+      return;
+    }
+    const api = chain.getApi();
+    const nextItem = Number(itemId);
+    if (!api || !Number.isInteger(nextItem) || nextItem < 0) {
+      setMessage("Enter an item id before signing.");
+      return;
+    }
+    setBusy(true);
+    const id = crypto.randomUUID();
+    txs.push({ id, label: `Mint item ${nextItem}`, status: "signing" });
+    try {
+      const { web3FromSource } = await import("@polkadot/extension-dapp");
+      const injected = await web3FromSource(signer.source);
+      if (!injected.signer) throw new Error("This wallet did not provide a signer.");
+      const result = await signAndSend(
+        api,
+        buildMintItem(api, Number(profile.id), nextItem, to.trim() || signer.address, profile.price),
+        signer.address,
+        injected.signer,
+        (update) => txs.patch(id, update),
+      );
+      if (result.status === "finalized" || result.status === "included") {
+        await chain.refreshCollections().catch(() => undefined);
+      }
+      setMessage(txResultMessage(result.status, result.error));
+    } catch (cause) {
+      const outcome = outcomeWithoutHash(errorText(cause));
+      txs.patch(id, outcome);
+      setMessage(outcome.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="space-y-3 border-t border-line px-4 py-3" onSubmit={(event) => void onSubmit(event)}>
+      <h3 className="text-sm font-medium">Mint another item</h3>
+      <p className="text-sm leading-6 text-muted">
+        Mint type {profile.mintType ?? "unavailable"}. {profile.price ? `The public price is ${formatUnits(profile.price, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}.` : "No public mint price is set."} An issuer-only collection rejects a signature from another account.
+      </p>
+      <label className="block text-xs text-muted">
+        New item id
+        <input className="mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-sm" value={itemId} onChange={(event) => setItemId(event.target.value)} />
+      </label>
+      <label className="block text-xs text-muted">
+        Mint to
+        <input className="mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-xs" value={to} onChange={(event) => setTo(event.target.value)} spellCheck={false} />
+      </label>
+      <button type="submit" disabled={busy || chain.status !== "live"} className="rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:opacity-50">
+        {busy ? "Waiting for the wallet…" : signer ? "Mint item" : "Connect Substrate wallet"}
+      </button>
+      {message ? <p className="text-sm leading-6 text-warn">{message}</p> : null}
+    </form>
   );
 }
 

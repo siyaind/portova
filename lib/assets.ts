@@ -84,6 +84,10 @@ export function metadataDeposit(
   return BigInt(constants.metadataDepositBase) + BigInt(constants.metadataDepositPerByte) * bytes;
 }
 
+export function buildAssetMint(api: ApiPromise, id: number, beneficiary: string, amount: bigint) {
+  return api.tx.assets.mint(id, beneficiary, amount);
+}
+
 export function buildCreateMintTx(api: ApiPromise, params: CreateMintParams) {
   return api.tx.utility.batchAll([
     api.tx.assets.create(params.id, params.admin, params.minBalance),

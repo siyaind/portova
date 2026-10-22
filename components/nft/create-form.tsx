@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
-import { txResultMessage } from "@/lib/tx-result";
+import { outcomeWithoutHash, signingLabel, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
   buildCollectionMintTx,
@@ -48,9 +48,13 @@ export function CreateCollectionForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
+  const previousSigner = useRef<string | null>(null);
 
   useEffect(() => {
-    if (signer && mintTo === "") setMintTo(signer.address);
+    if (!signer) return;
+    if (mintTo === "" || mintTo === previousSigner.current) setMintTo(signer.address);
+    previousSigner.current = signer.address;
   }, [signer, mintTo]);
 
   useEffect(() => {
@@ -160,7 +164,7 @@ export function CreateCollectionForm() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [paramKey, chain, params, signer]);
+  }, [paramKey, chain.status, chain.getApi, signer]);
 
   const deposits = useMemo(() => {
     if (!constants || !collectionValid) return null;
@@ -205,18 +209,21 @@ export function CreateCollectionForm() {
       admin: signer.address,
       mintTo: mintTo.trim() || signer.address,
     };
-    const id = crypto.randomUUID();
     setSubmitting(true);
-    txs.push({ id, label: `Create collection ${signed.collectionId}`, status: "signing" });
+    setSubmitPhase("signing");
+    let tracked: string | null = null;
     try {
       const current = await predictCollectionId(api);
       if (current !== signed.collectionId) {
         const message = `The next collection id changed to ${current}. Review the form and sign again. Nothing was submitted.`;
         setPredicted(current);
         setFormError(message);
-        txs.patch(id, { status: "failed", error: message });
+        setSubmitPhase(null);
         return;
       }
+      const id = crypto.randomUUID();
+      tracked = id;
+      txs.push({ id, label: `Create collection ${signed.collectionId}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
@@ -226,7 +233,10 @@ export function CreateCollectionForm() {
         tx,
         signer.address,
         injected.signer,
-        (update) => txs.patch(id, update),
+        (update) => {
+          setSubmitPhase(update.status);
+          txs.patch(id, update);
+        },
         createdCollectionUpdate,
       );
       if (result.status === "failed") {
@@ -243,9 +253,10 @@ export function CreateCollectionForm() {
       }
       setFormError(txResultMessage(result.status, result.error));
     } catch (cause) {
-      const message = errorText(cause);
-      setFormError(message);
-      txs.patch(id, { status: "failed", error: message });
+      const outcome = outcomeWithoutHash(errorText(cause));
+      setFormError(outcome.error);
+      setSubmitPhase(outcome.status);
+      if (tracked) txs.patch(tracked, outcome);
     } finally {
       setSubmitting(false);
     }
@@ -272,6 +283,9 @@ export function CreateCollectionForm() {
               required
             />
           </Field>
+          <p className="text-xs leading-5 text-faint">
+            This pallet has no collection name. The metadata URI is the on-chain identity.
+          </p>
           <Field label="Item metadata URI" hint={itemUri.trim() ? `${itemBytes}/${limit} bytes` : "Optional"}>
             <input
               className={FIELD}
@@ -341,7 +355,7 @@ export function CreateCollectionForm() {
             disabled={submitting || chain.status !== "live"}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "Waiting for the wallet…" : signer ? "Create and mint" : "Connect Substrate wallet"}
+            {submitting ? signingLabel(submitPhase, "Waiting for the wallet…") : signer ? "Create and mint" : "Connect Substrate wallet"}
           </button>
           <p className="text-xs leading-5 text-faint">
             Connecting only reads accounts. The collection batch is a separate signature. Mint

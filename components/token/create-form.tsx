@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
@@ -16,7 +16,7 @@ import {
   type CreateMintParams,
 } from "@/lib/assets";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
-import { txResultMessage } from "@/lib/tx-result";
+import { outcomeWithoutHash, signingLabel, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 
 const FIELD =
@@ -43,6 +43,8 @@ export function CreateTokenForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
+  const previousSigner = useRef<string | null>(null);
 
   useEffect(() => {
     if (!idTouched && chain.assets) {
@@ -55,7 +57,9 @@ export function CreateTokenForm() {
   }, [chain.assets, idTouched]);
 
   useEffect(() => {
-    if (signer && beneficiary === "") setBeneficiary(signer.address);
+    if (!signer) return;
+    if (beneficiary === "" || beneficiary === previousSigner.current) setBeneficiary(signer.address);
+    previousSigner.current = signer.address;
   }, [signer, beneficiary]);
 
   useEffect(() => {
@@ -139,7 +143,7 @@ export function CreateTokenForm() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [paramKey, chain, signer]);
+  }, [paramKey, chain.status, chain.getApi, signer]);
 
   const reserved = useMemo(() => {
     if (!constants || !nameValid || !symbolValid) return null;
@@ -179,20 +183,23 @@ export function CreateTokenForm() {
     const api = chain.getApi();
     if (!api || !constants) return;
 
-    const id = crypto.randomUUID();
     setSubmitting(true);
-    txs.push({
-      id,
-      label: `Create asset ${params.id}`,
-      status: "signing",
-    });
+    setSubmitPhase("signing");
+    let tracked: string | null = null;
     try {
       if (await assetIdTaken(api, params.id)) {
         const message = `Asset id ${params.id} is already on chain. Choose another id.`;
         setFormError(message);
-        txs.patch(id, { status: "failed", error: message });
+        setSubmitPhase(null);
         return;
       }
+      const id = crypto.randomUUID();
+      tracked = id;
+      txs.push({
+        id,
+        label: `Create asset ${params.id}`,
+        status: "signing",
+      });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) {
@@ -200,6 +207,7 @@ export function CreateTokenForm() {
       }
       const tx = buildCreateMintTx(api, params);
       const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => {
+        setSubmitPhase(update.status);
         txs.patch(id, update);
       });
       if (result.status === "failed") {
@@ -213,9 +221,10 @@ export function CreateTokenForm() {
       }
       setFormError(txResultMessage(result.status, result.error));
     } catch (cause) {
-      const message = errorText(cause);
-      setFormError(message);
-      txs.patch(id, { status: "failed", error: message });
+      const outcome = outcomeWithoutHash(errorText(cause));
+      setFormError(outcome.error);
+      setSubmitPhase(outcome.status);
+      if (tracked) txs.patch(tracked, outcome);
     } finally {
       setSubmitting(false);
     }
@@ -290,7 +299,7 @@ export function CreateTokenForm() {
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting
-              ? "Waiting for the wallet…"
+              ? signingLabel(submitPhase, "Waiting for the wallet…")
               : signer
                 ? "Create and mint"
                 : "Connect Substrate wallet"}

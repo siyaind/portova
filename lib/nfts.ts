@@ -122,6 +122,17 @@ export async function predictCollectionId(api: ApiPromise): Promise<number> {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
+export function buildMintItem(
+  api: ApiPromise,
+  collectionId: number,
+  itemId: number,
+  mintTo: string,
+  price: string | null,
+) {
+  const witness = price && /^\d+$/.test(price) ? { ownedItem: null, mintPrice: price } : null;
+  return api.tx.nfts.mint(collectionId, itemId, mintTo, witness);
+}
+
 export function buildCollectionMintTx(api: ApiPromise, params: CollectionMintParams) {
   const steps = collectionMintSteps({
     transferable: params.transferable,

@@ -8,7 +8,7 @@ import { PageIntro, Panel } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { swapQuoteKey } from "@/lib/liquidity-math";
-import { txResultMessage } from "@/lib/tx-result";
+import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import {
   applySlippage,
   assetDecimals,
@@ -129,7 +129,7 @@ export function SwapScreen() {
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
-      if (tracked) txs.patch(tracked, { status: "failed", error: text });
+      if (tracked) txs.patch(tracked, outcomeWithoutHash(text));
     } finally {
       busyRef.current = false;
       setBusy(false);

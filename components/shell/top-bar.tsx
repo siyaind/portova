@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { useChain } from "@/components/chain/chain-provider";
@@ -140,8 +141,54 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
   );
 }
 
+function searchResult(
+  raw: string,
+  assets: { id: string; name: string; symbol: string; decimals: number | null }[] | null,
+  collections: { id: string }[] | null,
+): { text: string; links?: { href: string; label: string }[] } | null {
+  const query = raw.trim();
+  if (!query) return null;
+  if (/^0x[0-9a-fA-F]{40}$/.test(query)) {
+    return {
+      text: "EVM address recognized. This shell does not look up an arbitrary address, and it does not treat an EVM native balance as tPOT.",
+    };
+  }
+  if (/^5[1-9A-HJ-NP-Za-km-z]{47}$/.test(query)) {
+    return {
+      text: "Substrate address recognized. Connect that account in the wallet to read its free balance. Arbitrary address lookup is not connected.",
+    };
+  }
+  if (/^\d+$/.test(query)) {
+    const asset = assets?.find((row) => row.id === query);
+    const collection = collections?.find((row) => row.id === query);
+    if (asset) {
+      return {
+        text: `Asset ${asset.id}: ${asset.name} (${asset.symbol}), ${asset.decimals ?? "unknown"} decimals. This is metadata from the testnet. It is not a price or a balance.`,
+        links: [
+          { href: `/token/${asset.id}`, label: "Open token" },
+          { href: `/collection/${query}`, label: "Open collection id" },
+        ],
+      };
+    }
+    if (assets === null) {
+      return {
+        text: "Asset metadata is still loading. This id can still open a collection page.",
+        links: [{ href: `/collection/${query}`, label: "Open collection" }],
+      };
+    }
+    return {
+      text: collection
+        ? `No asset metadata uses id ${query}. A collection with this id is stored.`
+        : `No asset metadata uses id ${query}. You can still open the collection page for a direct read.`,
+      links: [{ href: `/collection/${query}`, label: "Open collection" }],
+    };
+  }
+  return { text: "Search accepts an asset id, a 0x address, or a Substrate address." };
+}
+
 function SearchBox() {
   const chain = useChain();
+  const router = useRouter();
   const [value, setValue] = useState("");
   const [result, setResult] = useState<{
     text: string;
@@ -158,53 +205,16 @@ function SearchBox() {
     return () => document.removeEventListener("mousedown", onPointer);
   }, []);
 
+  useEffect(() => {
+    setResult(searchResult(value, chain.assets, chain.collections));
+  }, [value, chain.assets, chain.collections]);
+
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const query = value.trim();
-    if (!query) {
-      setResult(null);
-      return;
-    }
-    if (/^0x[0-9a-fA-F]{40}$/.test(query)) {
-      setResult({
-        text: "EVM address recognized. This shell does not look up an arbitrary address, and it does not treat an EVM native balance as tPOT.",
-      });
-      return;
-    }
-    if (/^5[1-9A-HJ-NP-Za-km-z]{47}$/.test(query)) {
-      setResult({
-        text: "Substrate address recognized. Connect that account in the wallet to read its free balance. Arbitrary address lookup is not connected.",
-      });
-      return;
-    }
-    if (/^\d+$/.test(query)) {
-      const asset = chain.assets?.find((row) => row.id === query);
-      const collection = chain.collections?.find((row) => row.id === query);
-      if (asset) {
-        setResult({
-          text: `Asset ${asset.id}: ${asset.name} (${asset.symbol}), ${asset.decimals ?? "unknown"} decimals. This is metadata from the testnet. It is not a price or a balance.`,
-          links: [
-            { href: `/token/${asset.id}`, label: "Open token" },
-            { href: `/collection/${query}`, label: "Open collection id" },
-          ],
-        });
-        return;
-      }
-      if (chain.assets === null) {
-        setResult({
-          text: "Asset metadata is still loading or unavailable, so this id cannot be matched.",
-        });
-        return;
-      }
-      setResult({
-        text: collection
-          ? `No asset metadata uses id ${query}. A collection with this id is stored.`
-          : `No asset metadata uses id ${query}. You can still open the collection page for a direct read.`,
-        links: [{ href: `/collection/${query}`, label: "Open collection" }],
-      });
-      return;
-    }
-    setResult({ text: "Search accepts an asset id, a 0x address, or a Substrate address." });
+    const next = searchResult(value, chain.assets, chain.collections);
+    setResult(next);
+    const href = next?.links?.[0]?.href;
+    if (href) router.push(href);
   }
 
   return (

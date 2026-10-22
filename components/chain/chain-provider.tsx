@@ -104,10 +104,19 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    const slow = window.setTimeout(() => {
+      if (cancelled) return;
+      setStatus((current) => {
+        if (current === "live") return current;
+        return "unavailable";
+      });
+      setError((current) => current ?? "The testnet read did not finish. Reload the page to try again.");
+    }, 20000);
     void connect();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(slow);
       unsubscribe?.();
       const api = apiRef.current;
       apiRef.current = null;

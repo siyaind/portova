@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { outcomeAfterWait, statusWithoutHash, txResultMessage } from "./tx-result.ts";
+import { outcomeAfterWait, outcomeWithoutHash, statusWithoutHash, txResultMessage } from "./tx-result.ts";
 
 test("only finalization is described as final", () => {
   assert.equal(txResultMessage("finalized"), "Finalized.");
@@ -8,6 +8,15 @@ test("only finalization is described as final", () => {
   assert.match(txResultMessage("submitted"), /not a final result/);
   assert.equal(txResultMessage("failed", "MethodDisabled"), "MethodDisabled");
   assert.match(txResultMessage("ambiguous"), /not proof the transaction failed/);
+});
+
+test("a wallet cancel or a rejected fee with no hash stays unknown", () => {
+  const cancelled = outcomeWithoutHash("Cancelled");
+  assert.equal(cancelled.status, "ambiguous");
+  assert.match(cancelled.error, /Cancelled/);
+  assert.match(cancelled.error, /not recorded as a failed transaction/);
+  const unpaid = outcomeWithoutHash("1010: Invalid Transaction: Inability to pay some fees");
+  assert.equal(unpaid.status, "ambiguous");
 });
 
 test("a missing hash is ambiguous rather than a failure", () => {

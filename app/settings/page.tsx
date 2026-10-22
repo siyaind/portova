@@ -10,6 +10,7 @@ import {
   NATIVE_DECIMALS,
   NATIVE_SYMBOL,
   NODE_CONSOLE,
+  SS58_PREFIX,
   SUBSTRATE_WS,
 } from "@/lib/network";
 
@@ -43,6 +44,7 @@ export default function SettingsPage() {
           }
         />
         <Setting label="Substrate RPC" value={SUBSTRATE_WS} />
+        <Setting label="SS58 prefix" value={String(SS58_PREFIX)} />
         <Setting label="EVM RPC" value={EVM_HTTP} />
         <Setting label="Node console" value={NODE_CONSOLE} />
         <Setting

@@ -3,10 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useChain } from "@/components/chain/chain-provider";
+import { useTxs } from "@/components/tx/tx-tracker";
+import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
+import { buildAssetMint, signAndSend } from "@/lib/assets";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
-import { errorText, formatUnits } from "@/lib/format";
+import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 
 export function TokenProfile({ id }: { id: string }) {
   const chain = useChain();
@@ -67,7 +71,12 @@ export function TokenProfile({ id }: { id: string }) {
           </p>
         </Panel>
       ) : null}
-      {profile?.found ? <ProfileBody profile={profile} /> : null}
+      {profile?.found ? (
+        <>
+          <ProfileBody profile={profile} />
+          <MintMore profile={profile} />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -129,6 +138,86 @@ function ProfileBody({ profile }: { profile: AssetProfile }) {
         </dl>
       </Panel>
     </div>
+  );
+}
+
+function MintMore({ profile }: { profile: AssetProfile }) {
+  const chain = useChain();
+  const wallet = useSubstrateWallet();
+  const txs = useTxs();
+  const signer = wallet.selected;
+  const [amount, setAmount] = useState("");
+  const [to, setTo] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (signer && to === "") setTo(signer.address);
+  }, [signer, to]);
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!signer) {
+      await wallet.connect();
+      return;
+    }
+    const api = chain.getApi();
+    if (!api || profile.decimals === null) {
+      setMessage("Decimals are unavailable, so no mint was signed.");
+      return;
+    }
+    const raw = parseDecimalToPlanck(amount, profile.decimals);
+    if (!raw || raw <= BigInt(0)) {
+      setMessage("Enter an amount above zero.");
+      return;
+    }
+    const destination = to.trim() || signer.address;
+    setBusy(true);
+    const id = crypto.randomUUID();
+    txs.push({ id, label: `Mint asset ${profile.id}`, status: "signing" });
+    try {
+      const { web3FromSource } = await import("@polkadot/extension-dapp");
+      const injected = await web3FromSource(signer.source);
+      if (!injected.signer) throw new Error("This wallet did not provide a signer.");
+      const result = await signAndSend(
+        api,
+        buildAssetMint(api, Number(profile.id), destination, raw),
+        signer.address,
+        injected.signer,
+        (update) => txs.patch(id, update),
+      );
+      if (result.status === "finalized" || result.status === "included") await chain.refreshAssets().catch(() => undefined);
+      setMessage(txResultMessage(result.status, result.error));
+    } catch (cause) {
+      const outcome = outcomeWithoutHash(errorText(cause));
+      txs.patch(id, outcome);
+      setMessage(outcome.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel className="space-y-3 p-4">
+      <h2 className="text-sm font-medium">Mint more</h2>
+      <p className="text-sm leading-6 text-muted">
+        This signs assets.mint for the existing id. The issuer can mint more. A signature from another account is rejected by the chain.
+      </p>
+      <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
+        <label className="block text-xs text-muted">
+          Amount
+          <input className="mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-sm" value={amount} onChange={(event) => setAmount(event.target.value)} />
+        </label>
+        <label className="block text-xs text-muted">
+          Mint to
+          <input className="mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-xs" value={to} onChange={(event) => setTo(event.target.value)} spellCheck={false} />
+        </label>
+        <button type="submit" disabled={busy || chain.status !== "live"} className="rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:opacity-50">
+          {busy ? "Waiting for the wallet…" : signer ? "Mint more" : "Connect Substrate wallet"}
+        </button>
+      </form>
+      {message ? <p className="text-sm leading-6 text-warn">{message}</p> : null}
+    </Panel>
   );
 }
 

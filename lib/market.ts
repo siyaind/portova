@@ -59,7 +59,12 @@ export async function scanListings(api: ApiPromise, collectionIds: string[]): Pr
   const listings: Listing[] = [];
   for (const collectionId of collectionIds.slice(0, 20)) {
     for (let itemId = 0; itemId < 24; itemId += 1) {
-      const sale = await readItemSale(api, collectionId, String(itemId));
+      let sale;
+      try {
+        sale = await readItemSale(api, collectionId, String(itemId));
+      } catch {
+        continue;
+      }
       if (!sale.listed || !sale.price) continue;
       const item = await readItemProfile(api, collectionId, String(itemId)).catch(() => null);
       listings.push({
