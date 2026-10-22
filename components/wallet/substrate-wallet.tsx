@@ -64,7 +64,7 @@ export function SubstrateWalletProvider({
         setSelected(null);
         setStatus("missing");
         setError(
-          "No Substrate wallet extension was found. Install Polkadot.js, Talisman, or SubWallet, then reload this page.",
+          "The connection request was closed, or no wallet extension answered. Choose Connect again. If no extension is installed, install Polkadot.js, Talisman, or SubWallet.",
         );
         return;
       }
@@ -75,12 +75,15 @@ export function SubstrateWalletProvider({
         source: account.meta.source ?? "extension",
       }));
       setAccounts(next);
-      setSelected(next[0] ?? null);
-      if (next.length === 0) {
+      const stored = window.sessionStorage.getItem("portova.substrate.selected");
+      const chosen = next.find((account) => account.address === stored) ?? next[0] ?? null;
+      setSelected(chosen);
+      if (!chosen) {
         setStatus("missing");
-        setError("The wallet extension is installed and has no accounts.");
+        setError("No account was chosen. Choose Connect again.");
         return;
       }
+      window.sessionStorage.setItem("portova.substrate.selected", chosen.address);
       setStatus("ready");
       window.sessionStorage.setItem("portova.substrate.connected", "1");
     } catch (cause) {
@@ -92,7 +95,9 @@ export function SubstrateWalletProvider({
   const select = useCallback(
     (address: string) => {
       const match = accounts.find((account) => account.address === address);
-      if (match) setSelected(match);
+      if (!match) return;
+      setSelected(match);
+      window.sessionStorage.setItem("portova.substrate.selected", match.address);
     },
     [accounts],
   );
@@ -103,6 +108,7 @@ export function SubstrateWalletProvider({
     setError(null);
     setStatus("idle");
     window.sessionStorage.removeItem("portova.substrate.connected");
+    window.sessionStorage.removeItem("portova.substrate.selected");
   }, []);
 
   useEffect(() => {

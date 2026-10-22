@@ -29,6 +29,26 @@ function parseAsset(codec: unknown): PoolAsset | null {
   return parseHumanAsset((codec as Codec).toHuman?.());
 }
 
+export function lpTokenFromPoolValue(value: unknown): string | null {
+  const record = unwrapCodec(value) as { lpToken?: { toString?: () => string } } | null;
+  const text = record?.lpToken?.toString?.()?.replace(/,/g, "");
+  return text && /^\d+$/.test(text) ? text : null;
+}
+
+function unwrapCodec(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const codec = value as { isNone?: boolean; unwrap?: () => unknown };
+  if (codec.isNone) return null;
+  if (typeof codec.unwrap === "function") {
+    try {
+      return codec.unwrap();
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
 function parseHumanAsset(human: unknown): PoolAsset | null {
   if (human === "Native") return { kind: "native" };
   if (human && typeof human === "object" && "WithId" in human) {

@@ -24,6 +24,8 @@ export function MarketScreen() {
   const signer = wallet.selected;
   const [trading, setTrading] = useState<boolean | null>(null);
   const [listings, setListings] = useState<Listing[] | null>(null);
+  const [scanState, setScanState] = useState<"idle" | "reading" | "ready" | "error">("idle");
+  const [scanError, setScanError] = useState<string | null>(null);
   const [collectionId, setCollectionId] = useState(params.get("collection") ?? "");
   const [itemId, setItemId] = useState(params.get("item") ?? "");
   const [price, setPrice] = useState("");
@@ -44,15 +46,22 @@ export function MarketScreen() {
     if (chain.status !== "live" || !api) return;
     if (chain.collections === null) return;
     let cancelled = false;
+    setScanState("reading");
+    setScanError(null);
     void scanListings(
       api,
       chain.collections.map((collection) => collection.id),
     )
       .then((next) => {
-        if (!cancelled) setListings(next);
+        if (cancelled) return;
+        setListings(next);
+        setScanState("ready");
       })
-      .catch(() => {
-        if (!cancelled) setListings(null);
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setListings(null);
+        setScanError(errorText(cause));
+        setScanState("error");
       });
     return () => {
       cancelled = true;
@@ -198,13 +207,17 @@ export function MarketScreen() {
       </Panel>
       <Panel>
         <div className="border-b border-line px-4 py-3 text-sm font-medium">Listed items</div>
-        {listings === null ? (
+        {scanState === "reading" || (listings === null && scanState !== "error") ? (
           <p className="px-4 py-6 text-sm text-muted">
             {chain.collections === null
               ? "The collection index is unavailable, so listings were not scanned."
-              : "The listing scan failed."}
+              : "Reading item prices."}
           </p>
-        ) : listings.length === 0 ? (
+        ) : scanState === "error" ? (
+          <p className="px-4 py-6 text-sm text-warn">
+            The listing scan failed.{scanError ? ` ${scanError}` : ""}
+          </p>
+        ) : listings === null || listings.length === 0 ? (
           <p className="px-4 py-6 text-sm leading-6 text-muted">
             No price was found on items 0–23 in the known collections. A missing row is not a floor price of zero.
           </p>

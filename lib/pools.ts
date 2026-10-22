@@ -1,6 +1,6 @@
 import type { ApiPromise } from "@polkadot/api";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
-import { parsePoolKey } from "@/lib/pool-key";
+import { lpTokenFromPoolValue, parsePoolKey } from "@/lib/pool-key";
 
 export type AssetRef = { kind: "native" } | { kind: "asset"; id: string };
 
@@ -105,9 +105,8 @@ export async function readPools(api: ApiPromise): Promise<PoolView[]> {
     }
     if (!pair) continue;
     const [asset1, asset2] = pair;
-    const info = value as unknown as { lpToken?: { toString(): string } };
-    const lpToken = info.lpToken?.toString()?.replace(/,/g, "");
-    if (!lpToken || !/^\d+$/.test(lpToken)) continue;
+    const lpToken = lpTokenFromPoolValue(value);
+    if (!lpToken) continue;
     let reserve1: string | null = null;
     let reserve2: string | null = null;
     try {
