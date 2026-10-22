@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
@@ -47,6 +47,7 @@ export function LiquidityScreen() {
   const [lpBalance, setLpBalance] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [addMessage, setAddMessage] = useState<string | null>(null);
+  const amounts = useRef({ first: "", second: "" });
   const [busy, setBusy] = useState<string | null>(null);
 
   const pool = chain.pools?.[poolIndex] ?? null;
@@ -81,6 +82,10 @@ export function LiquidityScreen() {
       cancelled = true;
     };
   }, [chain, pool, signer]);
+
+  useEffect(() => {
+    setAddMessage(null);
+  }, [signer?.address]);
 
   async function sign(
     label: string,
@@ -272,8 +277,8 @@ export function LiquidityScreen() {
       setAddMessage("Decimals for one side are unavailable, so the deposit was not built.");
       return;
     }
-    const desired1 = parseDecimalToPlanck(amount1, decimals1);
-    const desired2 = parseDecimalToPlanck(amount2, decimals2);
+    const desired1 = parseDecimalToPlanck(amounts.current.first, decimals1);
+    const desired2 = parseDecimalToPlanck(amounts.current.second, decimals2);
     if (!desired1 || !desired2) {
       setAddMessage("Enter amounts that stay above zero after slippage.");
       return;
@@ -288,10 +293,11 @@ export function LiquidityScreen() {
     const have2 = assetBalance(pool.asset2, BigInt(free), snapshot.holdings);
     const name1 = assetLabel(pool.asset1, maps.symbols);
     const name2 = assetLabel(pool.asset2, maps.symbols);
-    const short = [desired1 > have1 ? name1 : null, desired2 > have2 ? name2 : null].filter(Boolean);
+    const short = [desired1 > have1 ? name1 : null, desired2 > have2 ? name2 : null].filter((name): name is string => Boolean(name));
     if (short.length > 0) {
+      const verb = short.length > 1 ? "are short" : "is short";
       setAddMessage(
-        `${short.join(" and ")} is short. This deposit asks for ${shownAmount(desired1, decimals1, name1)} and ${shownAmount(desired2, decimals2, name2)}. This account has ${shownAmount(have1, decimals1, name1)} and ${shownAmount(have2, decimals2, name2)}. The wallet was not opened.`,
+        `${short.join(" and ")} ${verb}. This deposit asks for ${shownAmount(desired1, decimals1, name1)} and ${shownAmount(desired2, decimals2, name2)}. This account has ${shownAmount(have1, decimals1, name1)} and ${shownAmount(have2, decimals2, name2)}. The wallet was not opened.`,
       );
       return;
     }
@@ -334,13 +340,16 @@ export function LiquidityScreen() {
   }
 
   function fillFromReserves(side: 1 | 2, text: string) {
-    if (side === 1) setAmount1(text);
-    else setAmount2(text);
+    setAddMessage(null);
+    const next = { ...amounts.current, [side === 1 ? "first" : "second"]: text };
     if (!text.trim()) {
-      if (side === 1) setAmount2("");
-      else setAmount1("");
-      return;
+      next.first = "";
+      next.second = "";
     }
+    amounts.current = next;
+    setAmount1(next.first);
+    setAmount2(next.second);
+    if (!text.trim()) return;
     if (!pool || !reservesUsable(pool) || !pool.reserve1 || !pool.reserve2) return;
     const decimals1 = assetDecimals(pool.asset1, maps.decimals);
     const decimals2 = assetDecimals(pool.asset2, maps.decimals);
@@ -352,8 +361,10 @@ export function LiquidityScreen() {
       : pairedAmount(raw, BigInt(pool.reserve2), BigInt(pool.reserve1));
     if (other === null) return;
     const shown = formatUnits(other.toString(), side === 1 ? decimals2 : decimals1, side === 1 ? decimals2 : decimals1).replace(/,/g, "");
-    if (side === 1) setAmount2(shown);
-    else setAmount1(shown);
+    const paired = side === 1 ? { ...amounts.current, second: shown } : { ...amounts.current, first: shown };
+    amounts.current = paired;
+    setAmount1(paired.first);
+    setAmount2(paired.second);
   }
 }
 
