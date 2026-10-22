@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { errorText } from "@/lib/format";
@@ -37,8 +38,14 @@ export function SubstrateWalletProvider({
   const [accounts, setAccounts] = useState<SubstrateAccount[]>([]);
   const [selected, setSelected] = useState<SubstrateAccount | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const enableTask = useRef<Promise<unknown> | null>(null);
 
   const connect = useCallback(async () => {
+    if (enableTask.current) {
+      setStatus("error");
+      setError("A wallet request is still open. Close it in the extension, then choose Connect again.");
+      return;
+    }
     setStatus("connecting");
     setError(null);
     try {
@@ -46,6 +53,10 @@ export function SubstrateWalletProvider({
         "@polkadot/extension-dapp"
       );
       const enabled = web3Enable("PORTOVA");
+      enableTask.current = enabled;
+      void enabled.finally(() => {
+        enableTask.current = null;
+      });
       let timer = 0;
       const extensions = await Promise.race([
         enabled.finally(() => window.clearTimeout(timer)),
