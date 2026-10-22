@@ -1,8 +1,14 @@
 # Deployment notes
 
-Status: not deployed. Phase 7 does not publish a host, submit an extrinsic, or configure mainnet.
+Status: hosted on Vercel at https://portova.vercel.app. The site talks only to the V3 testnet. It does not configure mainnet and it does not hold a wallet key.
 
 Date: 2026-10-19. Chain read at block 100872.
+
+## Hosted site
+
+https://portova.vercel.app
+
+The host serves the same Next.js app. A visitor still signs with their own Substrate wallet extension. The first chain connection can take about half a minute.
 
 ## Run locally
 
