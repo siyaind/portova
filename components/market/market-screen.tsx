@@ -209,9 +209,11 @@ export function MarketScreen() {
         <div className="border-b border-line px-4 py-3 text-sm font-medium">Listed items</div>
         {scanState === "reading" || (listings === null && scanState !== "error") ? (
           <p className="px-4 py-6 text-sm text-muted">
-            {chain.collections === null
-              ? "The collection index is unavailable, so listings were not scanned."
-              : "Reading item prices."}
+            {chain.status === "connecting"
+              ? "Waiting for the testnet connection."
+              : chain.collections === null
+                ? "The collection index is unavailable, so listings were not scanned."
+                : "Reading item prices."}
           </p>
         ) : scanState === "error" ? (
           <p className="px-4 py-6 text-sm text-warn">

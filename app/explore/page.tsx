@@ -135,6 +135,7 @@ export default function ExplorePage() {
           <EmptyCount
             title="NFT collections"
             count={chain.collectionCount}
+            loading={chain.status === "connecting"}
             empty="The Nfts pallet has no collection records. Gallery pages stay empty until one is created."
           />
         )
@@ -162,6 +163,7 @@ export default function ExplorePage() {
           <EmptyCount
             title="Liquidity pools"
             count={chain.poolCount}
+            loading={chain.status === "connecting"}
             empty="AssetConversion has no pool records. Swap quotes stay off until a pool has reserves."
           />
         )
@@ -174,25 +176,29 @@ function EmptyCount({
   title,
   count,
   empty,
+  loading = false,
 }: {
   title: string;
   count: number | null;
   empty: string;
+  loading?: boolean;
 }) {
   return (
     <Panel className="p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium">{title}</h2>
         <span className="font-mono text-sm">
-          {count === null ? "Unavailable" : count}
+          {loading ? "Reading" : count === null ? "Unavailable" : count}
         </span>
       </div>
       <p className="mt-2 text-sm leading-6 text-muted">
-        {count === null
-          ? "The storage query did not return a count."
-          : count === 0
-            ? empty
-            : `${count} storage records exist, but the pool list could not be read.`}
+        {loading
+          ? "Reading the testnet."
+          : count === null
+            ? "The storage query did not return a count."
+            : count === 0
+              ? empty
+              : `${count} storage records exist, but the pool list could not be read.`}
       </p>
     </Panel>
   );

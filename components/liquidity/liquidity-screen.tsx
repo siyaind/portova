@@ -6,7 +6,7 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
-import { optimalDeposit } from "@/lib/liquidity-math";
+import { optimalDeposit, pairedAmount } from "@/lib/liquidity-math";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
@@ -123,12 +123,14 @@ export function LiquidityScreen() {
       <Panel className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Stored pools</h2>
-          <StatusPill tone={chain.pools === null ? "warn" : chain.poolCount === 0 ? "muted" : "ok"}>
-            {chain.poolCount === null ? "Count unavailable" : `${chain.poolCount} on chain`}
+          <StatusPill tone={chain.status === "connecting" || chain.pools === null ? "warn" : chain.poolCount === 0 ? "muted" : "ok"}>
+            {chain.status === "connecting" ? "Reading" : chain.poolCount === null ? "Count unavailable" : `${chain.poolCount} on chain`}
           </StatusPill>
         </div>
         {chain.pools === null ? (
-          <p className="mt-3 text-sm text-muted">The pool list is unavailable.</p>
+          <p className="mt-3 text-sm text-muted">
+            {chain.status === "connecting" ? "Reading pools from the testnet." : "The pool list is unavailable."}
+          </p>
         ) : chain.pools.length === 0 ? (
           <p className="mt-3 text-sm leading-6 text-muted">
             AssetConversion.pools has 0 records. There is no reserve, price, or LP balance to show.
@@ -187,12 +189,12 @@ export function LiquidityScreen() {
               <AmountField
                 label={assetLabel(pool.asset1, maps.symbols)}
                 value={amount1}
-                onChange={setAmount1}
+                onChange={(value) => fillFromReserves(1, value)}
               />
               <AmountField
                 label={assetLabel(pool.asset2, maps.symbols)}
                 value={amount2}
-                onChange={setAmount2}
+                onChange={(value) => fillFromReserves(2, value)}
               />
               <Slippage value={slippage} onChange={setSlippage} />
               <button
@@ -224,8 +226,20 @@ export function LiquidityScreen() {
           <>
             <p className="text-sm text-muted">
               Balance {formatLp(lpBalance, pool.lpDecimals)} of LP #{pool.lpToken}. Withdrawal fee {constants?.withdrawalFee ?? "unavailable"}.
+              {pool.lpDecimals === null ? " The LP decimals were not returned, so this field uses raw base units." : " Enter a decimal amount."}
             </p>
-            <AmountField label="LP tokens to burn" value={lpAmount} onChange={setLpAmount} />
+            <div className="flex items-end gap-2">
+              <div className="min-w-0 flex-1">
+                <AmountField label={pool.lpDecimals === null ? "Raw LP units to burn" : "LP tokens to burn"} value={lpAmount} onChange={setLpAmount} />
+              </div>
+              <button
+                type="button"
+                className="h-10 rounded-lg border border-line px-3 text-sm"
+                onClick={() => setLpAmount(pool.lpDecimals === null ? lpBalance : formatUnits(lpBalance, pool.lpDecimals, pool.lpDecimals).replace(/,/g, ""))}
+              >
+                Max
+              </button>
+            </div>
             <button
               type="button"
               disabled={Boolean(busy)}
@@ -258,6 +272,20 @@ export function LiquidityScreen() {
       setMessage("Enter amounts that stay above zero after slippage.");
       return;
     }
+    const snapshot = await chain.readAccount(signer.address);
+    const free = snapshot.free?.replace(/,/g, "") ?? "";
+    if (snapshot.error || !/^\d+$/.test(free)) {
+      setMessage(snapshot.error ?? "The account balance could not be read, so the wallet was not opened.");
+      return;
+    }
+    const have1 = assetBalance(pool.asset1, BigInt(free), snapshot.holdings);
+    const have2 = assetBalance(pool.asset2, BigInt(free), snapshot.holdings);
+    if (desired1 > have1 || desired2 > have2) {
+      setMessage(
+        `This deposit asks for ${shownAmount(desired1, decimals1, assetLabel(pool.asset1, maps.symbols))} and ${shownAmount(desired2, decimals2, assetLabel(pool.asset2, maps.symbols))}. This account has ${shownAmount(have1, decimals1, assetLabel(pool.asset1, maps.symbols))} and ${shownAmount(have2, decimals2, assetLabel(pool.asset2, maps.symbols))}. The wallet was not opened.`,
+      );
+      return;
+    }
     const reserve1 = pool.reserve1 && /^\d+$/.test(pool.reserve1) ? BigInt(pool.reserve1) : null;
     const reserve2 = pool.reserve2 && /^\d+$/.test(pool.reserve2) ? BigInt(pool.reserve2) : null;
     const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
@@ -288,6 +316,24 @@ export function LiquidityScreen() {
     await sign("Remove liquidity", (api) =>
       buildRemoveLiquidity(api, pool, raw, min1, min2, signer.address),
     );
+  }
+
+  function fillFromReserves(side: 1 | 2, text: string) {
+    if (side === 1) setAmount1(text);
+    else setAmount2(text);
+    if (!pool || !reservesUsable(pool) || !pool.reserve1 || !pool.reserve2) return;
+    const decimals1 = assetDecimals(pool.asset1, maps.decimals);
+    const decimals2 = assetDecimals(pool.asset2, maps.decimals);
+    if (decimals1 === null || decimals2 === null) return;
+    const raw = parseDecimalToPlanck(text, side === 1 ? decimals1 : decimals2);
+    if (raw === null) return;
+    const other = side === 1
+      ? pairedAmount(raw, BigInt(pool.reserve1), BigInt(pool.reserve2))
+      : pairedAmount(raw, BigInt(pool.reserve2), BigInt(pool.reserve1));
+    if (other === null) return;
+    const shown = formatUnits(other.toString(), side === 1 ? decimals2 : decimals1, side === 1 ? decimals2 : decimals1).replace(/,/g, "");
+    if (side === 1) setAmount2(shown);
+    else setAmount1(shown);
   }
 }
 
@@ -345,6 +391,21 @@ function AssetPicker({
       </select>
     </label>
   );
+}
+
+function assetBalance(
+  asset: AssetRef,
+  free: bigint,
+  holdings: { id: string; balance: string }[],
+): bigint {
+  if (asset.kind === "native") return free;
+  const row = holdings.find((holding) => holding.id === asset.id);
+  const digits = row?.balance.replace(/,/g, "") ?? "0";
+  return /^\d+$/.test(digits) ? BigInt(digits) : BigInt(0);
+}
+
+function shownAmount(amount: bigint, decimals: number, label: string): string {
+  return `${formatUnits(amount.toString(), decimals)} ${label}`;
 }
 
 function parseChoice(value: string): AssetRef {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { optimalDeposit, swapQuoteKey } from "./liquidity-math.ts";
+import { optimalDeposit, pairedAmount, swapQuoteKey } from "./liquidity-math.ts";
 
 test("an unbalanced deposit is reduced to the reserve ratio before slippage", () => {
   const quote = optimalDeposit(100n, 100n, 1000n, 2000n);
@@ -21,6 +21,11 @@ test("missing reserves do not invent a ratio", () => {
 
 test("a zero optimal amount is refused", () => {
   assert.equal(optimalDeposit(1n, 1n, 10_000n, 1n), null);
+});
+
+test("one deposit side fills the other from the reserve ratio", () => {
+  assert.equal(pairedAmount(100000000000000n, 100000000000000n, 1000000000000000000000n), 1000000000000000000000n);
+  assert.equal(pairedAmount(1n, 10n, 1n), null);
 });
 
 test("a quote key changes with the pool, direction, amount, and block", () => {
