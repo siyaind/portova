@@ -242,6 +242,41 @@ function ProfileBody({
   );
 }
 
+function ItemShortcuts({
+  count,
+  current,
+  onPick,
+}: {
+  count: string | null;
+  current: string;
+  onPick: (value: string) => void;
+}) {
+  const total = count && /^\d+$/.test(count) ? Number(count) : 0;
+  if (total <= 0) return null;
+  const shown = Math.min(total, 12);
+  return (
+    <div className="border-t border-line px-4 py-3">
+      <p className="text-xs leading-5 text-faint">
+        The pallet reports {total} items and does not return their ids. These buttons try the first {shown} ids.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {Array.from({ length: shown }, (_, index) => (
+          <button
+            key={index}
+            type="button"
+            className={`rounded-md border px-2 py-1 font-mono text-xs ${
+              current === String(index) ? "border-violet text-ink" : "border-line text-muted"
+            }`}
+            onClick={() => onPick(String(index))}
+          >
+            Item {index}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MintAnother({ profile }: { profile: CollectionProfile }) {
   const chain = useChain();
   const wallet = useSubstrateWallet();

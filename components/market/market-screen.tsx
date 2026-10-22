@@ -68,7 +68,7 @@ export function MarketScreen() {
     };
   }, [chain.status, chain.collections, chain.getApi]);
 
-  const tradingOff = trading === false;
+  const tradingOff = trading !== true;
   const idsValid = /^\d+$/.test(collectionId.trim()) && /^\d+$/.test(itemId.trim());
 
   async function loadSale() {
@@ -277,10 +277,10 @@ export function MarketScreen() {
           </label>
           <div className="flex flex-wrap gap-2">
             <Action disabled={tradingOff || Boolean(busy)} onClick={() => void submit("list")}>
-              {tradingOff ? "Trading disabled" : busy === "list" ? "Waiting for the wallet…" : signer ? "List item" : "Connect Substrate wallet"}
+              {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "list" ? "Waiting for the wallet…" : signer ? "List item" : "Connect Substrate wallet"}
             </Action>
             <Action disabled={tradingOff || Boolean(busy)} onClick={() => void submit("cancel")}>
-              {tradingOff ? "Trading disabled" : busy === "cancel" ? "Waiting…" : "Cancel listing"}
+              {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "cancel" ? "Waiting…" : "Cancel listing"}
             </Action>
             <button type="button" className="rounded-lg border border-line px-3 py-2 text-sm" onClick={() => void loadSale()}>
               Read price
@@ -305,7 +305,7 @@ export function MarketScreen() {
             <input className={`${FIELD} mt-1.5 font-mono`} inputMode="decimal" value={bid} onChange={(event) => setBid(event.target.value)} />
           </label>
           <Action disabled={tradingOff || Boolean(busy) || !sale?.listed} onClick={() => void submit("buy")}>
-            {tradingOff ? "Trading disabled" : busy === "buy" ? "Waiting for the wallet…" : signer ? "Buy item" : "Connect Substrate wallet"}
+            {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "buy" ? "Waiting for the wallet…" : signer ? "Buy item" : "Connect Substrate wallet"}
           </Action>
           <p className="text-xs leading-5 text-faint">
             The bid is paid to the seller.{" "}
