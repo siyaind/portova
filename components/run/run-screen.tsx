@@ -27,7 +27,7 @@ import {
 import { applySlippage, assetDecimals, buildAddLiquidity, buildCreatePool, buildSwapExactIn, quoteExactIn, readPoolConstants, readPools, sameAsset, type AssetRef, type PoolView } from "@/lib/pools";
 import { optimalDeposit } from "@/lib/liquidity-math";
 import { parseRun, rememberEvidence, type RunEvidence, type RunStepName } from "@/lib/testnet-run";
-import { txResultMessage, type TxStatus } from "@/lib/tx-result";
+import { outcomeWithoutHash, txResultMessage, type TxStatus } from "@/lib/tx-result";
 
 const FIELD = "mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-sm";
 const STORAGE_KEY = "portova.testnet-run.v1";
@@ -122,9 +122,9 @@ export function RunScreen() {
       return await signAndSend(api, build(api), signer.address, injected.signer, (update) => txs.patch(id, update), decorate);
     } catch (cause) {
       const text = errorText(cause);
-      const failed: TxUpdate = { status: "failed", error: text };
+      const failed = outcomeWithoutHash(text);
       txs.patch(id, failed);
-      setNotice(text);
+      setNotice(failed.error);
       return failed;
     } finally {
       busyRef.current = false;
@@ -310,7 +310,7 @@ export function RunScreen() {
       if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
     } catch (cause) {
       const text = errorText(cause);
-      txs.patch(id, { status: "failed", error: text });
+      txs.patch(id, outcomeWithoutHash(text));
       setNotice(text);
     } finally {
       busyRef.current = false;
@@ -319,20 +319,8 @@ export function RunScreen() {
   }
 
   function linkProject(patch: { assetId?: string; collectionId?: string; poolLpToken?: string }) {
-    if (!signer) return;
-    const current = project.project ?? {
-      name: "Testnet run",
-      assetId: "",
-      collectionId: "",
-      poolLpToken: "",
-      proceeds: signer.address,
-    };
-    const error = project.save({
-      ...current,
-      name: current.name || "Testnet run",
-      proceeds: current.proceeds || signer.address,
-      ...patch,
-    });
+    if (!project.project) return;
+    const error = project.save({ ...project.project, ...patch });
     if (error) setNotice(error);
   }
 

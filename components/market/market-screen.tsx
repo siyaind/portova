@@ -8,7 +8,7 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
-import { txResultMessage } from "@/lib/tx-result";
+import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
 import { readItemProfile } from "@/lib/nfts";
@@ -164,7 +164,7 @@ export function MarketScreen() {
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
-      txs.patch(id, { status: "failed", error: text });
+      txs.patch(id, outcomeWithoutHash(text));
     } finally {
       setBusy(null);
     }

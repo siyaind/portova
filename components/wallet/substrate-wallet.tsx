@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -52,7 +53,7 @@ export function SubstrateWalletProvider({
           timer = window.setTimeout(() => {
             reject(
               new Error(
-                "No Substrate wallet responded. Install Polkadot.js, Talisman, or SubWallet, then reload this page.",
+                "The wallet did not return an account. If you closed the prompt, choose Connect again. If no extension is installed, install Polkadot.js, Talisman, or SubWallet.",
               ),
             );
           }, 8000);
@@ -81,6 +82,7 @@ export function SubstrateWalletProvider({
         return;
       }
       setStatus("ready");
+      window.sessionStorage.setItem("portova.substrate.connected", "1");
     } catch (cause) {
       setStatus("error");
       setError(errorText(cause));
@@ -100,7 +102,13 @@ export function SubstrateWalletProvider({
     setSelected(null);
     setError(null);
     setStatus("idle");
+    window.sessionStorage.removeItem("portova.substrate.connected");
   }, []);
+
+  useEffect(() => {
+    if (window.sessionStorage.getItem("portova.substrate.connected") !== "1") return;
+    void connect();
+  }, [connect]);
 
   const value = useMemo(
     () => ({ status, accounts, selected, error, connect, select, disconnect }),

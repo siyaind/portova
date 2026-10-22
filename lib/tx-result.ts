@@ -85,6 +85,26 @@ export function outcomeAfterWait(input: {
   };
 }
 
+export function signingLabel(phase: TxStatus | null, idle: string): string {
+  if (phase === "submitted") return "Submitted";
+  if (phase === "included") return "Included";
+  if (phase === "finalized") return "Finalized";
+  if (phase === "ambiguous") return "Unknown";
+  if (phase === "failed") return "Failed";
+  if (phase === "signing") return "Waiting for the wallet…";
+  return idle;
+}
+
+export function outcomeWithoutHash(error: string): { status: "ambiguous"; error: string } {
+  const detail = error.trim();
+  return {
+    status: "ambiguous",
+    error: detail
+      ? `${detail} No hash was returned, so this is not recorded as a failed transaction.`
+      : "No transaction hash was returned. The outcome is unknown, and this is not proof the transaction failed.",
+  };
+}
+
 export function statusWithoutHash(status: TxStatus): TxStatus {
   if (status === "signing" || status === "submitted") return "ambiguous";
   return status;

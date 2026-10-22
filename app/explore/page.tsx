@@ -192,7 +192,7 @@ function EmptyCount({
           ? "The storage query did not return a count."
           : count === 0
             ? empty
-            : `${count} storage records exist. This build does not render their details yet.`}
+            : `${count} storage records exist, but the pool list could not be read.`}
       </p>
     </Panel>
   );
