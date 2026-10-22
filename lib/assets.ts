@@ -1,5 +1,6 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { Signer } from "@polkadot/types/types";
+import { plainChainError } from "@/lib/chain-error";
 import { reconcileExtrinsic } from "@/lib/tx-reconcile";
 import { outcomeAfterWait } from "@/lib/tx-result";
 
@@ -104,7 +105,7 @@ export function decodeDispatchError(api: ApiPromise, dispatchError: { isModule?:
       ? `${decoded.section}.${decoded.name}: ${docs}`
       : `${decoded.section}.${decoded.name}`;
   }
-  return dispatchError.toString();
+  return plainChainError(dispatchError.toString());
 }
 
 export async function signAndSend(

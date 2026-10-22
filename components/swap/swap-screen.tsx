@@ -146,7 +146,9 @@ export function SwapScreen() {
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <Panel className="space-y-4 p-4">
           {pools === null ? (
-            <p className="text-sm text-muted">The pool list is unavailable.</p>
+            <p className="text-sm text-muted">
+              {chain.status === "connecting" ? "Reading pools from the testnet." : "The pool list is unavailable."}
+            </p>
           ) : pools.length === 0 ? (
             <p className="text-sm leading-6 text-muted">
               AssetConversion.pools has 0 records. Create a pool and add reserves before a swap can be quoted.

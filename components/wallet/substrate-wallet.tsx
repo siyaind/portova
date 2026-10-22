@@ -53,7 +53,7 @@ export function SubstrateWalletProvider({
           timer = window.setTimeout(() => {
             reject(
               new Error(
-                "The wallet did not return an account. If you closed the prompt, choose Connect again. If no extension is installed, install Polkadot.js, Talisman, or SubWallet.",
+                "The connection request was closed. Choose Connect again. If a wallet prompt is still open, close it before trying again.",
               ),
             );
           }, 8000);

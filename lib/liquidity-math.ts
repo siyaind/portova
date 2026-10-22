@@ -4,6 +4,12 @@ export type DepositQuote = {
   reservesUsed: boolean;
 };
 
+export function pairedAmount(amount: bigint, reserveIn: bigint, reserveOut: bigint): bigint | null {
+  if (amount <= BigInt(0) || reserveIn <= BigInt(0) || reserveOut <= BigInt(0)) return null;
+  const other = (amount * reserveOut) / reserveIn;
+  return other > BigInt(0) ? other : null;
+}
+
 export function optimalDeposit(
   desired1: bigint,
   desired2: bigint,
