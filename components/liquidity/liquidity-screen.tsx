@@ -46,6 +46,7 @@ export function LiquidityScreen() {
   const [slippage, setSlippage] = useState("0.5");
   const [lpBalance, setLpBalance] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [addMessage, setAddMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const pool = chain.pools?.[poolIndex] ?? null;
@@ -85,8 +86,10 @@ export function LiquidityScreen() {
     label: string,
     build: (api: NonNullable<ReturnType<typeof chain.getApi>>) => ReturnType<typeof buildCreatePool>,
     refresh = true,
+    place: "add" | "other" = "other",
   ) {
-    setMessage(null);
+    const report = place === "add" ? setAddMessage : setMessage;
+    report(null);
     if (!signer) {
       await wallet.connect();
       return;
@@ -103,10 +106,10 @@ export function LiquidityScreen() {
       if (result.status === "finalized" || result.status === "included") {
         if (refresh) await chain.refreshPools().catch(() => undefined);
       }
-      setMessage(txResultMessage(result.status, result.error));
+      report(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
-      setMessage(text);
+      report(text);
       txs.patch(id, outcomeWithoutHash(text));
     } finally {
       setBusy(null);
@@ -161,7 +164,7 @@ export function LiquidityScreen() {
         <Panel className="space-y-4 p-4">
           <h2 className="text-sm font-medium">Create a pool</h2>
           <p className="text-xs leading-5 text-faint">
-            Setup fee {constants ? `${formatUnits(constants.poolSetupFee, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}` : "unavailable"}, paid in {constants?.poolSetupFeeAsset ?? "the native token"}. Swap fee {constants?.lpFee ?? "unavailable"}. This call does not add liquidity.
+            Setup fee {constants ? `${formatUnits(constants.poolSetupFee, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}` : chain.status === "connecting" ? "reading" : "unavailable"}, paid in {constants?.poolSetupFeeAsset ?? "the native token"}. Swap fee {constants?.lpFee ?? (chain.status === "connecting" ? "reading" : "unavailable")}. This call does not add liquidity.
           </p>
           <AssetPicker label="First asset" value={left} assets={chain.assets} onChange={setLeft} />
           <AssetPicker label="Second asset" value={right} assets={chain.assets} onChange={setRight} />
@@ -205,6 +208,7 @@ export function LiquidityScreen() {
               >
                 {busy === "Add liquidity" ? "Waiting for the wallet…" : signer ? "Add liquidity" : "Connect Substrate wallet"}
               </button>
+              {addMessage ? <p className="text-sm leading-6 text-warn">{addMessage}</p> : null}
             </>
           ) : (
             <p className="text-sm text-muted">Create a pool before a deposit can be built.</p>
@@ -225,17 +229,19 @@ export function LiquidityScreen() {
         ) : (
           <>
             <p className="text-sm text-muted">
-              Balance {formatLp(lpBalance, pool.lpDecimals)} of LP #{pool.lpToken}. Withdrawal fee {constants?.withdrawalFee ?? "unavailable"}.
-              {pool.lpDecimals === null ? " The LP decimals were not returned, so this field uses raw base units." : " Enter a decimal amount."}
+              Balance {formatLp(lpBalance, pool.lpDecimals)} of LP #{pool.lpToken}. Withdrawal fee {constants?.withdrawalFee ?? (chain.status === "connecting" ? "reading" : "unavailable")}.
+              {rawLpUnits(pool.lpDecimals)
+                ? " LP decimals were not returned, so Max and this field use raw base units."
+                : " Enter a decimal amount."}
             </p>
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1">
-                <AmountField label={pool.lpDecimals === null ? "Raw LP units to burn" : "LP tokens to burn"} value={lpAmount} onChange={setLpAmount} />
+                <AmountField label={rawLpUnits(pool.lpDecimals) ? "Raw LP units to burn" : "LP tokens to burn"} value={lpAmount} onChange={setLpAmount} />
               </div>
               <button
                 type="button"
                 className="h-10 rounded-lg border border-line px-3 text-sm"
-                onClick={() => setLpAmount(pool.lpDecimals === null ? lpBalance : formatUnits(lpBalance, pool.lpDecimals, pool.lpDecimals).replace(/,/g, ""))}
+                onClick={() => setLpAmount(rawLpUnits(pool.lpDecimals) ? lpBalance : formatUnits(lpBalance, pool.lpDecimals ?? 0, pool.lpDecimals ?? 0).replace(/,/g, ""))}
               >
                 Max
               </button>
@@ -263,46 +269,55 @@ export function LiquidityScreen() {
     const decimals1 = assetDecimals(pool.asset1, maps.decimals);
     const decimals2 = assetDecimals(pool.asset2, maps.decimals);
     if (decimals1 === null || decimals2 === null) {
-      setMessage("Decimals for one side are unavailable, so the deposit was not built.");
+      setAddMessage("Decimals for one side are unavailable, so the deposit was not built.");
       return;
     }
     const desired1 = parseDecimalToPlanck(amount1, decimals1);
     const desired2 = parseDecimalToPlanck(amount2, decimals2);
     if (!desired1 || !desired2) {
-      setMessage("Enter amounts that stay above zero after slippage.");
+      setAddMessage("Enter amounts that stay above zero after slippage.");
       return;
     }
     const snapshot = await chain.readAccount(signer.address);
     const free = snapshot.free?.replace(/,/g, "") ?? "";
     if (snapshot.error || !/^\d+$/.test(free)) {
-      setMessage(snapshot.error ?? "The account balance could not be read, so the wallet was not opened.");
+      setAddMessage(snapshot.error ?? "The account balance could not be read, so the wallet was not opened.");
       return;
     }
     const have1 = assetBalance(pool.asset1, BigInt(free), snapshot.holdings);
     const have2 = assetBalance(pool.asset2, BigInt(free), snapshot.holdings);
-    if (desired1 > have1 || desired2 > have2) {
-      setMessage(
-        `This deposit asks for ${shownAmount(desired1, decimals1, assetLabel(pool.asset1, maps.symbols))} and ${shownAmount(desired2, decimals2, assetLabel(pool.asset2, maps.symbols))}. This account has ${shownAmount(have1, decimals1, assetLabel(pool.asset1, maps.symbols))} and ${shownAmount(have2, decimals2, assetLabel(pool.asset2, maps.symbols))}. The wallet was not opened.`,
+    const name1 = assetLabel(pool.asset1, maps.symbols);
+    const name2 = assetLabel(pool.asset2, maps.symbols);
+    const short = [desired1 > have1 ? name1 : null, desired2 > have2 ? name2 : null].filter(Boolean);
+    if (short.length > 0) {
+      setAddMessage(
+        `${short.join(" and ")} is short. This deposit asks for ${shownAmount(desired1, decimals1, name1)} and ${shownAmount(desired2, decimals2, name2)}. This account has ${shownAmount(have1, decimals1, name1)} and ${shownAmount(have2, decimals2, name2)}. The wallet was not opened.`,
       );
       return;
     }
+    setAddMessage(null);
     const reserve1 = pool.reserve1 && /^\d+$/.test(pool.reserve1) ? BigInt(pool.reserve1) : null;
     const reserve2 = pool.reserve2 && /^\d+$/.test(pool.reserve2) ? BigInt(pool.reserve2) : null;
     const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
     const min1 = deposit ? applySlippage(deposit.amount1, slippage) : null;
     const min2 = deposit ? applySlippage(deposit.amount2, slippage) : null;
     if (!deposit || !min1 || !min2 || min1 <= BigInt(0) || min2 <= BigInt(0)) {
-      setMessage("The reserve ratio does not produce a deposit above zero, so nothing was signed.");
+      setAddMessage("The reserve ratio does not produce a deposit above zero, so nothing was signed.");
       return;
     }
-    await sign("Add liquidity", (api) =>
-      buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address),
+    await sign(
+      "Add liquidity",
+      (api) => buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address),
+      true,
+      "add",
     );
   }
 
   async function submitRemove() {
     if (!pool || !signer || !lpBalance) return;
-    const raw = pool.lpDecimals === null ? ( /^\d+$/.test(lpAmount.trim()) ? BigInt(lpAmount.trim()) : null ) : parseDecimalToPlanck(lpAmount, pool.lpDecimals);
+    const raw = rawLpUnits(pool.lpDecimals)
+      ? (/^\d+$/.test(lpAmount.trim()) ? BigInt(lpAmount.trim()) : null)
+      : parseDecimalToPlanck(lpAmount, pool.lpDecimals ?? 0);
     if (raw === null || raw <= BigInt(0) || raw > BigInt(lpBalance)) {
       setMessage("Enter an LP amount you hold.");
       return;
@@ -321,6 +336,11 @@ export function LiquidityScreen() {
   function fillFromReserves(side: 1 | 2, text: string) {
     if (side === 1) setAmount1(text);
     else setAmount2(text);
+    if (!text.trim()) {
+      if (side === 1) setAmount2("");
+      else setAmount1("");
+      return;
+    }
     if (!pool || !reservesUsable(pool) || !pool.reserve1 || !pool.reserve2) return;
     const decimals1 = assetDecimals(pool.asset1, maps.decimals);
     const decimals2 = assetDecimals(pool.asset2, maps.decimals);
@@ -348,6 +368,10 @@ function withdrawalMin(
   if (supplyRaw <= BigInt(0)) return null;
   const expected = (BigInt(reserve) * burn) / supplyRaw;
   return applySlippage(expected, slippage);
+}
+
+function rawLpUnits(decimals: number | null): boolean {
+  return decimals === null || decimals === 0;
 }
 
 function formatLp(balance: string, decimals: number | null): string {

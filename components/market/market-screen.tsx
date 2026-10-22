@@ -190,7 +190,7 @@ export function MarketScreen() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Trading feature</h2>
           {trading === null ? (
-            <StatusPill tone="warn">Unknown</StatusPill>
+            <StatusPill tone="warn">{chain.status === "connecting" ? "Reading" : "Unknown"}</StatusPill>
           ) : trading ? (
             <StatusPill tone="ok">Enabled</StatusPill>
           ) : (
@@ -202,7 +202,9 @@ export function MarketScreen() {
             ? "Nfts.Features is 0. Trading is bit 1, so set_price and buy_item are disabled by the runtime. A signature would fail with MethodDisabled. The buttons stay off."
             : trading === true
               ? "The runtime has the Trading bit set. List and buy each ask for their own signature."
-              : "The feature flag has not been read yet."}
+              : chain.status === "connecting"
+                ? "Reading the testnet."
+                : "The feature flag has not been read yet."}
         </p>
       </Panel>
       <Panel>
