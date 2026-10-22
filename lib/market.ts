@@ -59,23 +59,22 @@ export async function scanListings(api: ApiPromise, collectionIds: string[]): Pr
   const listings: Listing[] = [];
   for (const collectionId of collectionIds.slice(0, 20)) {
     for (let itemId = 0; itemId < 24; itemId += 1) {
-      let sale;
       try {
-        sale = await readItemSale(api, collectionId, String(itemId));
+        const sale = await readItemSale(api, collectionId, String(itemId));
+        if (!sale.listed || !sale.price) continue;
+        const item = await readItemProfile(api, collectionId, String(itemId)).catch(() => null);
+        listings.push({
+          collectionId,
+          itemId: String(itemId),
+          listed: true,
+          price: sale.price,
+          buyer: sale.buyer,
+          owner: item?.owner ?? null,
+          metadata: item?.metadata ?? null,
+        });
       } catch {
         continue;
       }
-      if (!sale.listed || !sale.price) continue;
-      const item = await readItemProfile(api, collectionId, String(itemId)).catch(() => null);
-      listings.push({
-        collectionId,
-        itemId: String(itemId),
-        listed: true,
-        price: sale.price,
-        buyer: sale.buyer,
-        owner: item?.owner ?? null,
-        metadata: item?.metadata ?? null,
-      });
     }
   }
   return listings;

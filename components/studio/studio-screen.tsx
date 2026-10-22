@@ -33,7 +33,7 @@ export function StudioScreen() {
   const [draft, setDraft] = useState<CreatorProject>(blankProject());
   const [hydrated, setHydrated] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"warn" | "muted">("muted");
   const [asset, setAsset] = useState<AssetProfile | null>(null);
@@ -83,7 +83,7 @@ export function StudioScreen() {
   function update(patch: Partial<CreatorProject>) {
     setDraft((current) => ({ ...current, ...patch }));
     setDirty(true);
-    setConfirming(false);
+
   }
 
   function save() {
@@ -94,20 +94,16 @@ export function StudioScreen() {
       return;
     }
     setDirty(false);
-    setConfirming(false);
+
     setNotice("Saved in this browser. Nothing was signed.");
     setNoticeTone("muted");
   }
 
   function clear() {
-    if (!confirming) {
-      setConfirming(true);
-      return;
-    }
     stored.clear();
     setDraft(blankProject());
     setDirty(false);
-    setConfirming(false);
+
     setNotice("The local project record was removed.");
     setNoticeTone("muted");
   }
@@ -256,7 +252,7 @@ export function StudioScreen() {
               Save in this browser
             </Button>
             <Button type="button" onClick={clear}>
-              {confirming ? "Confirm clear" : "Clear project"}
+              Clear project
             </Button>
             <Button
               type="button"

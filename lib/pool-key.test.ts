@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parsePoolKey } from "./pool-key.ts";
+import { lpTokenFromPoolValue, parsePoolKey } from "./pool-key.ts";
 
 test("a pool storage key can be one tuple of Native and WithId", () => {
   const pair = parsePoolKey({
@@ -14,6 +14,17 @@ test("a pool storage key can be one tuple of Native and WithId", () => {
     { kind: "native" },
     { kind: "asset", id: "4242" },
   ]);
+});
+
+test("the pool record can be an Option around the LP token", () => {
+  assert.equal(
+    lpTokenFromPoolValue({
+      isNone: false,
+      unwrap: () => ({ lpToken: { toString: () => "0" } }),
+    }),
+    "0",
+  );
+  assert.equal(lpTokenFromPoolValue({ isNone: true, unwrap: () => ({ lpToken: { toString: () => "1" } }) }), null);
 });
 
 test("a pool storage key can still be two separate args", () => {

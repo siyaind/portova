@@ -172,8 +172,7 @@ function searchResult(
     }
     if (assets === null) {
       return {
-        text: "Asset metadata is still loading. This id can still open a collection page.",
-        links: [{ href: `/collection/${query}`, label: "Open collection" }],
+        text: "Asset metadata is still loading. Press Enter again after the token list appears.",
       };
     }
     return {
