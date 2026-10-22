@@ -49,6 +49,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
       : "Connect";
 
   return (
+    <>
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-bg px-3 sm:gap-3 sm:px-4">
       <button
         type="button"
@@ -138,6 +139,10 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
       </button>
       <WalletDialog open={walletOpen} onClose={() => setWalletOpen(false)} />
     </header>
+    {substrate.error && !walletOpen ? (
+      <p className="border-b border-line bg-bg px-4 py-2 text-sm leading-6 text-warn">{substrate.error}</p>
+    ) : null}
+    </>
   );
 }
 
