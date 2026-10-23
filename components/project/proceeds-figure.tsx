@@ -15,38 +15,50 @@ export function useProceedsBalance(address: string): {
   free: string | null;
   holdings: HoldingRow[];
   error: string | null;
+  assetsPending: boolean;
 } {
   const chain = useChain();
   const trimmed = address.trim();
   const valid = isProceedsAddress(trimmed);
   const [row, setRow] = useState<{ address: string; snapshot: AccountSnapshot } | null>(null);
+  const [assetsPending, setAssetsPending] = useState(false);
+
+  const assetCount = chain.assets?.length ?? -1;
 
   useEffect(() => {
-    if (!valid || chain.status !== "live") return;
+    if (!valid || chain.status !== "live") {
+      setAssetsPending(false);
+      return;
+    }
     let cancelled = false;
+    setAssetsPending(true);
     void chain
-      .readAccount(trimmed)
+      .readAccount(trimmed, (snapshot) => {
+        if (!cancelled && snapshot.free !== null && !snapshot.error) setRow({ address: trimmed, snapshot });
+      })
       .then((snapshot) => {
-        if (!cancelled) setRow({ address: trimmed, snapshot });
+        if (cancelled) return;
+        setRow({ address: trimmed, snapshot });
+        setAssetsPending(false);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setRow({
-            address: trimmed,
-            snapshot: { free: null, spendable: null, holdings: [], error: errorText(cause) },
-          });
-        }
+        if (cancelled) return;
+        setAssetsPending(false);
+        setRow({
+          address: trimmed,
+          snapshot: { free: null, spendable: null, holdings: [], error: errorText(cause) },
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [valid, trimmed, chain.status, chain.readAccount]);
+  }, [valid, trimmed, assetCount, chain.status, chain.readAccount]);
 
   const current = row?.address === trimmed ? row.snapshot : null;
-  if (!trimmed) return { status: "empty", free: null, holdings: [], error: null };
-  if (!valid) return { status: "invalid", free: null, holdings: [], error: null };
+  if (!trimmed) return { status: "empty", free: null, holdings: [], error: null, assetsPending: false };
+  if (!valid) return { status: "invalid", free: null, holdings: [], error: null, assetsPending: false };
   if (chain.status === "unavailable") {
-    return { status: "unavailable", free: null, holdings: [], error: chain.error };
+    return { status: "unavailable", free: null, holdings: [], error: chain.error, assetsPending: false };
   }
   if (!current) {
     return {
@@ -54,6 +66,7 @@ export function useProceedsBalance(address: string): {
       free: null,
       holdings: [],
       error: null,
+      assetsPending: false,
     };
   }
   const free = current.free?.replace(/,/g, "") ?? null;
@@ -63,9 +76,10 @@ export function useProceedsBalance(address: string): {
       free: null,
       holdings: [],
       error: current.error ?? "The free balance was not returned.",
+      assetsPending: false,
     };
   }
-  return { status: "ready", free, holdings: current.holdings, error: null };
+  return { status: "ready", free, holdings: current.holdings, error: null, assetsPending };
 }
 
 export function ProceedsFigure({ address }: { address: string }) {
@@ -98,7 +112,9 @@ export function ProceedsBody({
           {formatUnits(balance.free, NATIVE_DECIMALS)} {NATIVE_SYMBOL}
         </p>
         <p>System.Account free balance of the proceeds account.</p>
-        {balance.holdings.length === 0 ? (
+        {balance.assetsPending ? (
+          <p>Reading created-asset balances.</p>
+        ) : balance.holdings.length === 0 ? (
           <p>No created-asset balance above zero was returned for this account.</p>
         ) : (
           <ul className="space-y-1">

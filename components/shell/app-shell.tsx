@@ -68,14 +68,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       {navOpen ? (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation"
-            className="absolute inset-0 bg-black/70"
-            onClick={() => setNavOpen(false)}
-          />
-          <aside ref={navRef} className="app-sidebar mobile-sidebar relative flex h-full w-[min(100%,18rem)] flex-col" role="dialog" aria-modal="true" aria-label="Navigation">
+        <div className="fixed inset-0 z-40 flex lg:hidden">
+          <aside ref={navRef} className="app-sidebar mobile-sidebar relative z-10 flex h-full w-[min(100%,18rem)] shrink-0 flex-col" role="dialog" aria-modal="true" aria-label="Navigation">
             <div className="flex items-center justify-between pr-3">
               <div className="app-brand-wrap"><Brand compact /></div>
               <button
@@ -90,6 +84,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SidebarNav />
             <SidebarFooter />
           </aside>
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="min-h-full min-w-0 flex-1 bg-black/70"
+            onClick={() => setNavOpen(false)}
+          />
         </div>
       ) : null}
     </div>

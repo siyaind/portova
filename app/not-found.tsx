@@ -11,7 +11,7 @@ export default function NotFound() {
         The route does not exist. Financial data is not implied by a missing page.
       </p>
       <Link
-        href="/"
+        href="/overview"
         className="mt-5 inline-flex rounded-lg border border-line px-3 py-2 text-sm hover:bg-panel"
       >
         Back to overview

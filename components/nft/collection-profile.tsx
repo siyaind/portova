@@ -289,10 +289,47 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
   const [to, setTo] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fee, setFee] = useState<string | null>(null);
+  const [feeError, setFeeError] = useState<string | null>(null);
+  const nextItem = Number(itemId.trim());
+  const itemValid =
+    /^\d+$/.test(itemId.trim()) && Number.isSafeInteger(nextItem) && nextItem >= 0 && nextItem <= 4_294_967_295;
+  const destination = to.trim() || signer?.address || "";
+  const destinationValid = isProceedsAddress(destination);
 
   useEffect(() => {
     if (signer && to === "") setTo(signer.address);
   }, [signer, to]);
+
+  useEffect(() => {
+    const api = chain.getApi();
+    if (!api || !signer || !itemValid || !destinationValid || chain.status !== "live") {
+      setFee(null);
+      setFeeError(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const tx = buildMintItem(api, Number(profile.id), nextItem, destination, profile.price);
+      tx.paymentInfo(signer.address)
+        .then((info) => {
+          if (!cancelled) {
+            setFee(info.partialFee.toString());
+            setFeeError(null);
+          }
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) {
+            setFee(null);
+            setFeeError(errorText(cause));
+          }
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [chain.status, chain.getApi, signer, itemValid, destinationValid, nextItem, destination, profile.id, profile.price]);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -359,6 +396,16 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
         Mint to
         <input className="mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-xs" value={to} onChange={(event) => setTo(event.target.value)} spellCheck={false} />
       </label>
+      <p className="text-xs leading-5 text-faint">
+        Estimated fee ({NATIVE_SYMBOL}){" "}
+        {fee
+          ? `${formatUnits(fee, NATIVE_DECIMALS, 6)} ${NATIVE_SYMBOL}`
+          : signer && itemValid && destinationValid
+            ? feeError
+              ? "Unavailable"
+              : "Estimating…"
+            : "appears after the item id and destination are valid."}
+      </p>
       <button type="submit" disabled={busy || chain.status !== "live"} className="rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:opacity-50">
         {busy ? "Waiting for the wallet…" : signer ? "Mint item" : "Connect Substrate wallet"}
       </button>

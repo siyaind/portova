@@ -355,7 +355,7 @@ export function CreateTokenForm() {
               term={`Estimated fee (${NATIVE_SYMBOL})`}
               value={
                 fee
-                  ? formatUnits(fee, NATIVE_DECIMALS, 6)
+                  ? `${formatUnits(fee, NATIVE_DECIMALS, 6)} ${NATIVE_SYMBOL}`
                   : signer
                     ? feeError
                       ? "Unavailable"

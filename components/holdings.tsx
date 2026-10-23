@@ -17,6 +17,8 @@ export function HoldingsTable({ compact = false }: { compact?: boolean }) {
   const [snapshot, setSnapshot] = useState<AccountSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const assetCount = chain.assets?.length ?? -1;
+
   useEffect(() => {
     if (!address || chain.status !== "live") {
       setSnapshot(null);
@@ -25,15 +27,24 @@ export function HoldingsTable({ compact = false }: { compact?: boolean }) {
     }
     let cancelled = false;
     setLoading(true);
-    void chain.readAccount(address).then((next) => {
-      if (cancelled) return;
-      setSnapshot(next);
-      setLoading(false);
-    });
+    void chain
+      .readAccount(address, (partial) => {
+        if (!cancelled && partial.free !== null && !partial.error) setSnapshot(partial);
+      })
+      .then((next) => {
+        if (cancelled) return;
+        setSnapshot(next);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSnapshot({ free: null, spendable: null, holdings: [], error: "The account could not be read." });
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [address, chain, chain.status, chain.blockNumber]);
+  }, [address, assetCount, chain.status, chain.readAccount]);
 
   return (
     <div>
@@ -109,13 +120,12 @@ function nativeAmount(
   loading: boolean,
   snapshot: AccountSnapshot | null,
 ) {
+  const free = snapshot?.free?.replace(/,/g, "") ?? "";
   if (!address) return <span className="text-muted">Connect wallet</span>;
   if (status !== "live") return <span className="text-muted">Unavailable</span>;
+  if (snapshot && !snapshot.error && /^\d+$/.test(free)) return formatUnits(free, NATIVE_DECIMALS);
   if (loading || !snapshot) return <span className="text-muted">Reading…</span>;
-  if (snapshot.error || snapshot.free === null) {
-    return <span className="text-warn">Unavailable</span>;
-  }
-  return formatUnits(snapshot.free, NATIVE_DECIMALS);
+  return <span className="text-warn">Unavailable</span>;
 }
 
 function nativeState(

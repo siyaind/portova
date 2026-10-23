@@ -97,7 +97,7 @@ export function ActivityScreen() {
             <li key={row.id} className="border-b border-line px-4 py-3 last:border-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-medium">Phase {row.phase}</h3>
-                <StatusPill tone="muted">No hash</StatusPill>
+                <StatusPill tone="muted">Call catalog</StatusPill>
               </div>
               <p className="mt-1 font-mono text-xs break-all text-muted">{row.call}</p>
               <p className="mt-1 text-sm leading-6 text-muted">{row.detail}</p>

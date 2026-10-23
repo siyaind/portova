@@ -9,9 +9,14 @@ export function formatUnits(
 
   const padded = digits.padStart(decimals + 1, "0");
   const whole = padded.slice(0, padded.length - decimals) || "0";
-  const fraction = padded
-    .slice(padded.length - decimals, padded.length - decimals + fractionDigits)
-    .replace(/0+$/, "");
+  const decimalPart = padded.slice(padded.length - decimals);
+  let fraction = decimalPart.slice(0, fractionDigits).replace(/0+$/, "");
+  if (!fraction && whole === "0" && /[1-9]/.test(digits)) {
+    const first = decimalPart.search(/[1-9]/);
+    if (first >= 0) {
+      fraction = decimalPart.slice(0, Math.min(decimalPart.length, first + 4)).replace(/0+$/, "");
+    }
+  }
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const shown = fraction ? `${grouped}.${fraction}` : grouped;
   return negative ? `-${shown}` : shown;

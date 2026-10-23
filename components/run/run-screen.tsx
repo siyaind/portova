@@ -17,6 +17,7 @@ import {
   type TxUpdate,
 } from "@/lib/assets";
 import { planck } from "@/lib/balance";
+import { readAssetMinBalance } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { readTradingEnabled } from "@/lib/market";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
@@ -28,7 +29,7 @@ import {
   predictCollectionId,
   readNftConstants,
 } from "@/lib/nfts";
-import { applySlippage, assetDecimals, buildAddLiquidity, buildCreatePool, buildSwapExactIn, missingLpAccountDeposit, quoteExactIn, readPoolConstants, readPoolPosition, readPools, sameAsset, type AssetRef, type PoolView } from "@/lib/pools";
+import { applySlippage, assetDecimals, balanceDigits, buildAddLiquidity, buildCreatePool, buildSwapExactIn, missingLpAccountDeposit, quoteForSwap, readPoolConstants, readPoolPosition, readPools, reservePaysSwap, sameAsset, type AssetRef, type PoolView } from "@/lib/pools";
 import { optimalDeposit } from "@/lib/liquidity-math";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { depositStillExecutable, swapStillExecutable } from "@/lib/quote-window";
@@ -56,8 +57,11 @@ export function RunScreen() {
   const [tokenSymbol, setTokenSymbol] = useState("RUN");
   const [collectionUri, setCollectionUri] = useState("ipfs://portova/run");
   const [nativeAmount, setNativeAmount] = useState("1");
-  const [tokenAmount, setTokenAmount] = useState("1");
+  const [tokenAmount, setTokenAmount] = useState("100");
   const [swapAmount, setSwapAmount] = useState("0.1");
+  const [swapPreview, setSwapPreview] = useState<{ key: string; out: string; minimum: string } | null>(null);
+  const [swapPreviewState, setSwapPreviewState] = useState<"idle" | "reading" | "ready" | "none">("idle");
+  const [assetReady, setAssetReady] = useState(false);
 
   useEffect(() => {
     setEvidence(parseRun(window.localStorage.getItem(STORAGE_KEY)));
@@ -78,13 +82,85 @@ export function RunScreen() {
     }
   }, [chain.status, chain.getApi, collectionId]);
 
+  const [suggestAsset, setSuggestAsset] = useState(false);
+
   useEffect(() => {
-    if (assetId || !chain.assets) return;
+    const saved = window.sessionStorage.getItem("portova.testnet-run.asset.v1");
+    if (saved && /^\d+$/.test(saved)) setAssetId(saved);
+    setSuggestAsset(true);
+  }, []);
+
+  useEffect(() => {
+    if (/^\d+$/.test(assetId)) window.sessionStorage.setItem("portova.testnet-run.asset.v1", assetId);
+  }, [assetId]);
+
+  useEffect(() => {
+    if (!suggestAsset || assetId || !chain.assets) return;
     const ids = chain.assets.map((asset) => Number(asset.id)).filter((id) => Number.isInteger(id) && id >= 0);
     setAssetId(String(ids.length === 0 ? 1 : Math.max(...ids) + 1));
-  }, [assetId, chain.assets]);
+  }, [suggestAsset, assetId, chain.assets]);
+
+  useEffect(() => {
+    const api = chain.getApi();
+    const id = Number(assetId.trim());
+    if (chain.status !== "live" || !api || !Number.isInteger(id) || id < 0) {
+      setAssetReady(false);
+      return;
+    }
+    let cancelled = false;
+    setAssetReady(false);
+    void assetIdTaken(api, id)
+      .then((taken) => {
+        if (!cancelled) setAssetReady(taken);
+      })
+      .catch(() => {
+        if (!cancelled) setAssetReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, chain.status, chain.getApi, chain.assets]);
 
   const pool = findNativePool(chain.pools, assetId);
+  const swapReceive = pool ? (pool.asset1.kind === "native" ? pool.asset2 : pool.asset1) : null;
+  const swapPreviewKey = pool && swapReceive ? `${pool.lpToken}|${pool.reserve1 ?? ""}|${pool.reserve2 ?? ""}|${swapAmount}` : "";
+
+  useEffect(() => {
+    const api = chain.getApi();
+    const amount = parseDecimalToPlanck(swapAmount, NATIVE_DECIMALS);
+    if (chain.status !== "live" || !api || !pool || !swapReceive || !swapPreviewKey || !amount || amount <= BigInt(0)) {
+      setSwapPreview(null);
+      setSwapPreviewState(pool ? "idle" : "none");
+      return;
+    }
+    let cancelled = false;
+    setSwapPreviewState("reading");
+    const timer = window.setTimeout(() => {
+      const receive = swapReceive;
+      void quoteForSwap(api, { kind: "native" }, receive, amount)
+        .then((priced) => {
+          if (cancelled) return;
+          const minimum = priced && /^[1-9]\d*$/.test(priced.amount) ? applySlippage(BigInt(priced.amount), "0.5") : null;
+          if (!priced || minimum === null || minimum <= BigInt(0)) {
+            setSwapPreview(null);
+            setSwapPreviewState("none");
+            return;
+          }
+          setSwapPreview({ key: swapPreviewKey, out: priced.amount, minimum: minimum.toString() });
+          setSwapPreviewState("ready");
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSwapPreview(null);
+            setSwapPreviewState("none");
+          }
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [chain.status, chain.getApi, pool, swapReceive, swapPreviewKey, swapAmount]);
   const liveApi = chain.getApi();
   const setupFee = chain.status === "live" && liveApi ? readPoolConstants(liveApi) : null;
 
@@ -99,7 +175,8 @@ export function RunScreen() {
         refId,
       }),
     );
-    setNotice(txResultMessage(result.status, result.error));
+    const sentence = txResultMessage(result.status, result.error);
+    setNotice(result.hash ? `${sentence} ${result.hash}` : sentence);
   }
 
   async function sign(
@@ -111,12 +188,12 @@ export function RunScreen() {
     decorate?: Parameters<typeof signAndSend>[5],
     blockHash?: string,
     stillCurrent?: () => Promise<boolean>,
+    buttonLabel?: string,
   ): Promise<TxUpdate | null> {
     if (!signer) {
       await wallet.connect();
       return null;
     }
-    if (busyRef.current) return null;
     const api = chain.getApi();
     if (!api) {
       setNotice("The testnet connection is unavailable.");
@@ -138,8 +215,7 @@ export function RunScreen() {
         return null;
       }
     }
-    busyRef.current = true;
-    setBusy(label);
+    setBusy(buttonLabel ?? label);
     const id = crypto.randomUUID();
     txs.push({ id, label, status: "signing" });
     try {
@@ -161,6 +237,16 @@ export function RunScreen() {
       txs.patch(id, failed);
       setNotice(failed.error);
       return failed;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runLocked(body: () => Promise<void>) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      await body();
     } finally {
       busyRef.current = false;
       setBusy(null);
@@ -203,7 +289,7 @@ export function RunScreen() {
       planck(constants.assetDeposit),
       metadataDeposit(constants, tokenName.trim(), tokenSymbol.trim()),
       planck(constants.assetAccountDeposit),
-    ]);
+    ], undefined, undefined, undefined, "Sign token");
     if (!result) return;
     record("token", `Create asset ${id}`, result, result.status === "finalized" ? String(id) : undefined);
     if (result.status === "finalized" || result.status === "included") await chain.refreshAssets().catch(() => undefined);
@@ -244,6 +330,9 @@ export function RunScreen() {
       buildCollectionCreateTx(api, draft),
       [planck(constants.collectionDeposit)],
       createdCollectionUpdate,
+      undefined,
+      undefined,
+      "Sign NFT",
     );
     if (!created) return;
     const confirmed = created.collectionId && created.status === "finalized" ? created.collectionId : undefined;
@@ -265,6 +354,10 @@ export function RunScreen() {
         byteDeposit(constants, itemMetadata),
         0n,
       ],
+      undefined,
+      undefined,
+      undefined,
+      "Sign NFT",
     );
     if (!finished) return;
     record("nft", `Finish collection ${confirmed}`, finished, confirmed);
@@ -287,23 +380,36 @@ export function RunScreen() {
     const poolConstants = readPoolConstants(api);
     const setup = poolConstants && /native/i.test(poolConstants.poolSetupFeeAsset) ? planck(poolConstants.poolSetupFee) : null;
     const tx = buildCreatePool(api, left, right);
-    const result = await sign(`Create pool ${NATIVE_SYMBOL}/${assetId}`, tx, [setup]);
+    if (!findNativePool(chain.pools, assetId) && !assetReady) {
+      setNotice("Create the asset before opening a pool for it.");
+      return;
+    }
+    const result = await sign(`Create pool ${NATIVE_SYMBOL}/${assetId}`, tx, [setup], undefined, undefined, undefined, "Sign pool");
     if (!result) return;
-    record("pool", `Create pool ${NATIVE_SYMBOL}/${assetId}`, result);
+    let label = `Create pool ${NATIVE_SYMBOL}/${assetId}`;
+    let refId: string | undefined;
     if (result.status === "finalized" || result.status === "included") {
       await chain.refreshPools().catch(() => undefined);
-      const api = chain.getApi();
-      const pools = api ? await readPools(api).catch(() => []) : [];
+      const nextApi = chain.getApi();
+      const pools = nextApi ? await readPools(nextApi).catch(() => []) : [];
       const created = findNativePool(pools, assetId);
-      if (created && result.status === "finalized") linkProject({ poolLpToken: created.lpToken });
+      if (created) {
+        label = `Create pool ${NATIVE_SYMBOL}/${assetId} LP ${created.lpToken}`;
+        refId = created.lpToken;
+        if (result.status === "finalized") linkProject({ poolLpToken: created.lpToken });
+      }
     }
+    record("pool", label, result, refId);
   }
 
   async function addLiquidity() {
+    if (busyRef.current) return;
     if (!signer || !pool) {
       setNotice("Add liquidity after the pool is stored on chain.");
       return;
     }
+    busyRef.current = true;
+    try {
     const decimals = new Map((chain.assets ?? []).flatMap((asset) => (asset.decimals === null ? [] : [[asset.id, asset.decimals] as const])));
     const leftDecimals = assetDecimals(pool.asset1, decimals);
     const rightDecimals = assetDecimals(pool.asset2, decimals);
@@ -347,55 +453,67 @@ export function RunScreen() {
         const nextReserve2 = next.reserve2 && /^\d+$/.test(next.reserve2) ? BigInt(next.reserve2) : null;
         return depositStillExecutable(deposit.amount1, deposit.amount2, min1, min2, nextReserve1, nextReserve2);
       },
+      "Sign liquidity",
     );
     if (!result) return;
     record("liquidity", `Add liquidity LP ${pool.lpToken}`, result, result.status === "finalized" ? pool.lpToken : undefined);
-    if (result.status === "finalized" || result.status === "included") await chain.refreshPools().catch(() => undefined);
+    if (result.status === "finalized" || result.status === "included") void chain.refreshPools().catch(() => undefined);
+    } finally {
+      busyRef.current = false;
+      setBusy(null);
+    }
   }
 
   async function swap() {
+    if (busyRef.current) return;
     if (!signer) {
       await wallet.connect();
       return;
     }
-    if (!pool || busyRef.current) return;
+    if (!pool || !swapReceive) return;
+    const shown = swapPreview && swapPreview.key === swapPreviewKey ? swapPreview : null;
+    if (!shown) {
+      setNotice(swapPreviewState === "reading" ? "The quote is still being read." : "Wait until the quote and minimum are on the page.");
+      return;
+    }
     const api = chain.getApi();
     if (!api) return;
     const pay: AssetRef = { kind: "native" };
-    const receive = pool.asset1.kind === "native" ? pool.asset2 : pool.asset1;
+    const receive = swapReceive;
     const amount = parseDecimalToPlanck(swapAmount, NATIVE_DECIMALS);
     if (!amount || amount <= BigInt(0)) {
       setNotice("Enter a swap amount before signing.");
       return;
     }
+    const signedMinimum = BigInt(shown.minimum);
     busyRef.current = true;
-    setBusy("Sign swap");
+    setBusy("check");
     const id = crypto.randomUUID();
+    let tracked = false;
     try {
-      const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
-      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The finalized block hash could not be read.");
-      const fresh = await quoteExactIn(api, pay, receive, amount, hash);
-      const minimum = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), "0.5") : null;
-      if (!fresh || !minimum || minimum <= BigInt(0)) {
-        setNotice("The node did not return a quote for this amount, so nothing was signed.");
+      const priced = await quoteForSwap(api, pay, receive, amount);
+      if (!priced || !swapStillExecutable(BigInt(priced.amount), signedMinimum)) {
+        setSwapPreview(null);
+        setSwapPreviewState("none");
+        setNotice(priced ? "The quote no longer covers the minimum on the page. Nothing was signed." : await minimumReserveNotice(api, pool, receive));
         return;
       }
-      const tx = buildSwapExactIn(api, pay, receive, amount, minimum, signer.address);
-      const review = await reviewExtrinsic(api, tx, signer.address, [amount], hash);
+      const tx = buildSwapExactIn(api, pay, receive, amount, signedMinimum, signer.address);
+      const review = await reviewExtrinsic(api, tx, signer.address, [amount], priced.blockHash ?? undefined);
       if (!review.ok) {
         setNotice(review.message);
         return;
       }
       const quoteStillCovers = async () => {
-        const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
-        if (!/^0x[0-9a-fA-F]{64}$/.test(againHash)) return false;
-        const again = await quoteExactIn(api, pay, receive, amount, againHash);
-        return again !== null && /^\d+$/.test(again) && swapStillExecutable(BigInt(again), minimum);
+        const again = await quoteForSwap(api, pay, receive, amount);
+        return again !== null && swapStillExecutable(BigInt(again.amount), signedMinimum);
       };
       if (!(await quoteStillCovers())) {
-        setNotice("The quote no longer covers your minimum. Nothing was submitted.");
+        setNotice("The quote no longer covers the minimum on the page. Nothing was submitted.");
         return;
       }
+      setBusy("Sign swap");
+      tracked = true;
       txs.push({ id, label: `Swap ${NATIVE_SYMBOL}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
@@ -410,14 +528,34 @@ export function RunScreen() {
         quoteStillCovers,
       );
       record("swap", `Swap ${NATIVE_SYMBOL}`, result);
-      if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
+      if (result.status === "finalized") void chain.refreshPools().catch(() => undefined);
     } catch (cause) {
       const text = errorText(cause);
-      txs.patch(id, outcomeWithoutHash(text));
+      if (tracked) txs.patch(id, outcomeWithoutHash(text));
       setNotice(text);
     } finally {
       busyRef.current = false;
       setBusy(null);
+    }
+  }
+
+  async function minimumReserveNotice(api: NonNullable<ReturnType<typeof chain.getApi>>, pool: PoolView, receive: AssetRef): Promise<string> {
+    const fallback = "The node did not return a quote for this amount, so nothing was signed.";
+    if (receive.kind !== "asset") return fallback;
+    try {
+      const [minimum, position] = await Promise.all([
+        readAssetMinBalance(api, receive.id),
+        readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken),
+      ]);
+      const reserve = sameAsset(pool.asset1, receive) ? position.reserve1 : sameAsset(pool.asset2, receive) ? position.reserve2 : null;
+      if (minimum === null || reservePaysSwap(reserve, minimum) !== false) return fallback;
+      const raw = balanceDigits(reserve);
+      const decimals = assetDecimals(receive, new Map((chain.assets ?? []).flatMap((asset) => (asset.decimals === null ? [] : [[asset.id, asset.decimals] as const]))));
+      const symbol = chain.assets?.find((asset) => asset.id === receive.id)?.symbol ?? `asset ${receive.id}`;
+      if (!raw || decimals === null) return fallback;
+      return `The pool holds ${formatUnits(raw, decimals)} ${symbol}. Its minimum balance is ${formatUnits(minimum.toString(), decimals)} ${symbol}, so a swap into ${symbol} has no quote until the pool holds more. Nothing was signed.`;
+    } catch {
+      return fallback;
     }
   }
 
@@ -463,16 +601,20 @@ export function RunScreen() {
         <Panel className="space-y-3 p-4">
           <h2 className="text-sm font-medium">3. Pool</h2>
           <p className="text-sm leading-6 text-muted">{pool ? `Pool LP ${pool.lpToken} is already stored for ${NATIVE_SYMBOL} and asset ${assetId}.` : `No stored pool pairs ${NATIVE_SYMBOL} with asset ${assetId || "the chosen id"}.`}</p>
-          <Action busy={busy} label="Sign pool" onClick={() => void createPool()} />
+          <Action busy={busy} label="Sign pool" disabled={!pool && !assetReady} onClick={() => void createPool()} />
+          {!pool && !assetReady ? <p className="text-xs leading-5 text-faint">Sign pool stays off until asset {assetId || "the chosen id"} is on chain.</p> : null}
         </Panel>
         <Panel className="space-y-3 p-4">
           <h2 className="text-sm font-medium">4. Liquidity and swap</h2>
           <label className="block text-xs text-muted">{NATIVE_SYMBOL} amount<input className={FIELD} value={nativeAmount} onChange={(event) => setNativeAmount(event.target.value)} /></label>
           <label className="block text-xs text-muted">Token amount<input className={FIELD} value={tokenAmount} onChange={(event) => setTokenAmount(event.target.value)} /></label>
+          <p className="text-xs leading-5 text-faint">{pool ? depositMinimumLine(pool, nativeAmount, tokenAmount, chain.assets) ?? "Enter both amounts to see the minimum deposit." : "Create a pool before a deposit can be built."}</p>
           <Action busy={busy} label="Sign liquidity" disabled={!pool} onClick={() => void addLiquidity()} />
           <label className="block text-xs text-muted">Swap {NATIVE_SYMBOL} in<input className={FIELD} value={swapAmount} onChange={(event) => setSwapAmount(event.target.value)} /></label>
-          <Action busy={busy} label="Sign swap" disabled={!pool} onClick={() => void swap()} />
-          <p className="text-xs leading-5 text-faint">Liquidity and swap stay unsigned until that pool is stored. The swap signs only after a fresh node quote. Slippage is 0.5%.</p>
+          <p className="text-sm leading-6 text-muted">{swapQuoteLine(swapPreviewState, swapPreview, swapPreviewKey, swapReceive, chain.assets)}</p>
+          <Action busy={busy} label="Sign swap" disabled={!pool || swapPreview?.key !== swapPreviewKey} onClick={() => void swap()} />
+          {notice ? <p className="text-sm leading-6 text-warn">{notice}</p> : null}
+          <p className="text-xs leading-5 text-faint">Liquidity and swap stay unsigned until that pool is stored. Deposit more than 1 token. A pool that holds only the token's 1-unit minimum cannot quote a {NATIVE_SYMBOL} swap into that token. Sign swap stays off until the quote and minimum are shown. Slippage is 0.5%.</p>
         </Panel>
       </div>
       <Panel>
@@ -510,6 +652,54 @@ function Action({ busy, label, onClick, disabled = false }: { busy: string | nul
       {busy === label ? "Waiting for the wallet…" : label}
     </button>
   );
+}
+
+function depositMinimumLine(
+  pool: PoolView,
+  nativeAmount: string,
+  tokenAmount: string,
+  assets: { id: string; decimals: number | null; symbol: string }[] | null,
+): string | null {
+  const decimals = new Map((assets ?? []).flatMap((asset) => (asset.decimals === null ? [] : [[asset.id, asset.decimals] as const])));
+  const leftDecimals = assetDecimals(pool.asset1, decimals);
+  const rightDecimals = assetDecimals(pool.asset2, decimals);
+  if (leftDecimals === null || rightDecimals === null) return null;
+  const desired1 = parseDecimalToPlanck(pool.asset1.kind === "native" ? nativeAmount : tokenAmount, leftDecimals);
+  const desired2 = parseDecimalToPlanck(pool.asset2.kind === "native" ? nativeAmount : tokenAmount, rightDecimals);
+  if (!desired1 || !desired2) return null;
+  const reserve1 = balanceDigits(pool.reserve1);
+  const reserve2 = balanceDigits(pool.reserve2);
+  const deposit = optimalDeposit(desired1, desired2, reserve1 === null ? null : BigInt(reserve1), reserve2 === null ? null : BigInt(reserve2));
+  if (!deposit) return null;
+  const min1 = applySlippage(deposit.amount1, "0.5");
+  const min2 = applySlippage(deposit.amount2, "0.5");
+  if (min1 === null || min2 === null || min1 <= BigInt(0) || min2 <= BigInt(0)) return null;
+  const left = assetSymbol(pool.asset1, assets);
+  const right = assetSymbol(pool.asset2, assets);
+  return `Minimum deposit ${formatUnits(min1.toString(), leftDecimals)} ${left} and ${formatUnits(min2.toString(), rightDecimals)} ${right}. The signed call reads the reserves again and can differ.`;
+}
+
+function swapQuoteLine(
+  state: "idle" | "reading" | "ready" | "none",
+  preview: { key: string; out: string; minimum: string } | null,
+  key: string,
+  receive: AssetRef | null,
+  assets: { id: string; decimals: number | null; symbol: string }[] | null,
+): string {
+  if (!receive) return "A quote appears here after the pool is stored.";
+  if (state === "reading") return "Reading the quote…";
+  const decimals = assetDecimals(receive, new Map((assets ?? []).flatMap((asset) => (asset.decimals === null ? [] : [[asset.id, asset.decimals] as const]))));
+  const symbol = assetSymbol(receive, assets);
+  if (state === "ready" && preview && preview.key === key && decimals !== null) {
+    return `Quote ${formatUnits(preview.out, decimals)} ${symbol}. Minimum ${formatUnits(preview.minimum, decimals)} ${symbol}.`;
+  }
+  if (state === "none") return "No quote for this amount yet.";
+  return "The quote and minimum appear here before the wallet opens.";
+}
+
+function assetSymbol(asset: AssetRef, assets: { id: string; symbol: string }[] | null): string {
+  if (asset.kind === "native") return NATIVE_SYMBOL;
+  return assets?.find((item) => item.id === asset.id)?.symbol ?? `asset ${asset.id}`;
 }
 
 function findNativePool(pools: PoolView[] | null, assetId: string): PoolView | null {

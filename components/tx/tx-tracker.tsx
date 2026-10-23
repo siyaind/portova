@@ -5,7 +5,7 @@ import type { TxPhase } from "@/lib/assets";
 import { statusWithoutHash } from "@/lib/tx-result";
 
 const STORAGE_KEY = "portova.session-txs.v1";
-const LIMIT = 12;
+const LIMIT = 40;
 
 export type TrackedTx = {
   id: string;
