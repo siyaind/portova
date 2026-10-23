@@ -1,13 +1,23 @@
 /**
- * queryInfo on the signed bytes was short of TransactionFeePaid by 1113 planck
- * for balances.transferKeepAlive in block 154574 and by 4383 planck for
- * utility.batchAll in block 154647 on wss://test-node-v3.portaldot.dev.
- * Unsigned queryInfo at the same block returned 0 for transfer, mint, NFT mint,
- * add-liquidity, and swap, so that path is not a fee.
+ * Largest queryInfo shortfall versus TransactionFeePaid in the scanned sample.
+ * It is not a maximum for every call, wallet, or runtime version.
+ * balances.transferKeepAlive block 154574 was short by 1113 planck.
+ * utility.batchAll block 154647 was short by 4383 planck.
+ * Unsigned queryInfo at a block returned 0, so that path is not a fee.
  */
-export const SIGNED_FEE_SHORTFALL = 4383n;
+export const OBSERVED_FEE_SHORTFALL = 4383n;
 
-export function guardedFee(partialFee: bigint | null, shortfall = SIGNED_FEE_SHORTFALL): bigint | null {
+export function guardedFee(partialFee: bigint | null, shortfall = OBSERVED_FEE_SHORTFALL): bigint | null {
   if (partialFee === null || partialFee <= BigInt(0) || shortfall < BigInt(0)) return null;
   return partialFee + shortfall;
+}
+
+export function feeHeadroom(
+  spendable: bigint,
+  need: bigint,
+  observedShortfall = OBSERVED_FEE_SHORTFALL,
+): "short" | "marginal" | "ok" {
+  if (need > spendable) return "short";
+  if (spendable - need < observedShortfall) return "marginal";
+  return "ok";
 }

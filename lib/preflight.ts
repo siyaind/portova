@@ -1,6 +1,6 @@
 import type { ApiPromise } from "@polkadot/api";
 import { keptAliveSpendable, largestFrozenBalance, planck } from "./balance.ts";
-import { guardedFee } from "./fee-evidence.ts";
+import { OBSERVED_FEE_SHORTFALL, feeHeadroom, guardedFee } from "./fee-evidence.ts";
 import { formatUnits } from "./format.ts";
 
 export type CheckedCall<T> = {
@@ -47,16 +47,23 @@ export async function reviewCall<T>(input: {
     blockHash = await input.finalizedHash();
     const account = await input.accountAt(blockHash, input.payer);
     const info = await input.tx.paymentInfo(input.payer);
-    const fee = guardedFee(planck(info.partialFee.toString()), input.feeShortfall);
+    const shortfall = input.feeShortfall ?? OBSERVED_FEE_SHORTFALL;
+    const fee = guardedFee(planck(info.partialFee.toString()), shortfall);
     const spendableText = keptAliveSpendable(account);
     const spendable = planck(spendableText);
     const nativeNeed = sumDebits(fee, input.nativeDebits);
     if (fee === null || spendable === null || nativeNeed === null) {
       return refuse("The fee, spendable balance, or a required deposit could not be read.");
     }
-    if (nativeNeed > spendable) {
+    const room = feeHeadroom(spendable, nativeNeed, shortfall);
+    if (room === "short") {
       return refuse(
-        `This account can spend ${shown(spendable, decimals, symbol)} after frozen funds and the existential deposit. This call needs ${shown(nativeNeed, decimals, symbol)}, including the estimated fee.`,
+        `This account can spend ${shown(spendable, decimals, symbol)} after frozen funds and the existential deposit. This call needs ${shown(nativeNeed, decimals, symbol)}, including the estimated fee and the observed fee gap.`,
+      );
+    }
+    if (room === "marginal") {
+      return refuse(
+        `After this estimate, less than ${shown(shortfall, decimals, symbol)} would remain. The largest measured fee gap is ${shown(shortfall, decimals, symbol)} from two included calls, and that is not a maximum.`,
       );
     }
     return { ok: true, tx: input.tx, blockHash, fee, spendable, nativeNeed };

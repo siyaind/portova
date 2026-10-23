@@ -1,7 +1,7 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { Signer } from "@polkadot/types/types";
 import { plainChainError } from "@/lib/chain-error";
-import { reconcileExtrinsic } from "@/lib/tx-reconcile";
+import { collectionIdForHash, reconcileExtrinsic } from "@/lib/tx-reconcile";
 import { extrinsicDispatch, outcomeAfterWait } from "@/lib/tx-result";
 
 export type AssetConstants = {
@@ -190,8 +190,12 @@ export async function signAndSend(
       if (statusTimer !== null) return;
       statusTimer = setTimeout(() => {
         void reconcileExtrinsic(api, hash)
-          .then((chain) => {
-            if (!settled) finish(outcomeAfterWait({ hash, sawIncluded, chain }));
+          .then(async (chain) => {
+            if (settled) return;
+            const update = outcomeAfterWait({ hash, sawIncluded, chain });
+            const collectionId =
+              chain === "finalized" || chain === "included" ? await collectionIdForHash(api, hash) : null;
+            finish(collectionId ? { ...update, collectionId } : update);
           })
           .catch(() => {
             if (!settled) finish(outcomeAfterWait({ hash, sawIncluded, chain: "unchecked" }));
