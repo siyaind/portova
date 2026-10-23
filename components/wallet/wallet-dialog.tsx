@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useConnection, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { Button } from "@/components/ui";
@@ -37,12 +38,12 @@ export function WalletDialog({
   const wrongChain =
     connection.isConnected && connection.chainId !== CHAIN_ID;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+  return createPortal(
+    <div className="fixed inset-0 z-50 overflow-y-auto p-3">
       <button
         type="button"
         aria-label="Dismiss wallet dialog"
-        className="absolute inset-0 bg-black/70"
+        className="fixed inset-0 bg-black/70"
         onClick={onClose}
       />
       <div
@@ -50,7 +51,7 @@ export function WalletDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="wallet-dialog-surface relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panel"
+        className="wallet-dialog-surface relative mx-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panel"
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
@@ -87,7 +88,10 @@ export function WalletDialog({
                   <li key={account.address}>
                     <button
                       type="button"
-                      onClick={() => substrate.select(account.address)}
+                      onClick={() => {
+                        substrate.select(account.address);
+                        onClose();
+                      }}
                       className={`w-full rounded-lg border px-3 py-2 text-left ${
                         active ? "border-violet bg-panel-2" : "border-line hover:bg-panel-2"
                       }`}
@@ -190,6 +194,7 @@ export function WalletDialog({
         </section>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

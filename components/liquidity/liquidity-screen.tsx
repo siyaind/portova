@@ -51,10 +51,12 @@ export function LiquidityScreen() {
   const [lpAmount, setLpAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
   const [lpBalance, setLpBalance] = useState<string | null>(null);
+  const [lpRead, setLpRead] = useState<"idle" | "reading" | "ready">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [addMessage, setAddMessage] = useState<string | null>(null);
   const amounts = useRef({ first: "", second: "" });
   const [busy, setBusy] = useState<string | null>(null);
+  const actionRef = useRef(false);
 
   const pool = chain.pools?.find((item) => item.lpToken === poolLp) ?? chain.pools?.[0] ?? null;
 
@@ -81,22 +83,33 @@ export function LiquidityScreen() {
 
   useEffect(() => {
     const api = chain.getApi();
-    if (!api || !signer || !pool) {
+    if (!api || !signer || !pool || chain.status !== "live") {
       setLpBalance(null);
+      setLpRead("idle");
       return;
     }
     let cancelled = false;
+    setLpRead("reading");
     void readLpBalance(api, pool.lpToken, signer.address)
       .then((balance) => {
-        if (!cancelled) setLpBalance(balance);
+        if (cancelled) return;
+        setLpBalance(balance);
+        setLpRead("ready");
       })
       .catch(() => {
-        if (!cancelled) setLpBalance(null);
+        if (cancelled) return;
+        setLpBalance(null);
+        setLpRead("ready");
       });
     return () => {
       cancelled = true;
     };
-  }, [chain, pool, signer]);
+  }, [chain.status, chain.getApi, pool, signer]);
+
+  const depositPreview = useMemo(
+    () => previewDeposit(pool, amount1, amount2, slippage, maps.decimals),
+    [pool, amount1, amount2, slippage, maps.decimals],
+  );
 
   useEffect(() => {
     setAddMessage(null);
@@ -150,10 +163,10 @@ export function LiquidityScreen() {
         undefined,
         input.stillCurrent,
       );
-      if (result.status === "finalized" || result.status === "included") {
-        if (refresh) await chain.refreshPools().catch(() => undefined);
+      report(result.hash ? `${txResultMessage(result.status, result.error)} ${result.hash}` : txResultMessage(result.status, result.error));
+      if ((result.status === "finalized" || result.status === "included") && refresh) {
+        void chain.refreshPools().catch(() => undefined);
       }
-      report(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
       report(text);
@@ -245,6 +258,7 @@ export function LiquidityScreen() {
                 onChange={(value) => fillFromReserves(2, value)}
               />
               <Slippage value={slippage} onChange={setSlippage} />
+              <DepositMinimum pool={pool} preview={depositPreview} symbols={maps.symbols} />
               <button
                 type="button"
                 disabled={Boolean(busy)}
@@ -268,6 +282,8 @@ export function LiquidityScreen() {
           <p className="text-sm text-muted">Connect a Substrate wallet to read an LP balance.</p>
         ) : !pool ? (
           <p className="text-sm text-muted">No pool is selected.</p>
+        ) : lpRead !== "ready" ? (
+          <p className="text-sm text-muted">Reading the LP balance…</p>
         ) : lpBalance === null ? (
           <p className="text-sm text-muted">LP balance is unavailable.</p>
         ) : lpBalance === "0" ? (
@@ -309,27 +325,39 @@ export function LiquidityScreen() {
   );
 
   async function submitCreate() {
+    if (actionRef.current) return;
     if (!signer) {
       await wallet.connect();
       return;
     }
-    const api = chain.getApi();
-    if (!api || !constants || !/native/i.test(constants.poolSetupFeeAsset)) {
-      setMessage("The pool setup fee could not be read as a native deposit, so the wallet was not opened.");
-      return;
+    actionRef.current = true;
+    setBusy("prepare");
+    try {
+      const api = chain.getApi();
+      if (!api || !constants || !/native/i.test(constants.poolSetupFeeAsset)) {
+        setMessage("The pool setup fee could not be read as a native deposit, so the wallet was not opened.");
+        return;
+      }
+      await sign({
+        label: "Create pool",
+        tx: buildCreatePool(api, left, right),
+        nativeDebits: [planck(constants.poolSetupFee)],
+      });
+    } finally {
+      actionRef.current = false;
+      setBusy(null);
     }
-    await sign({
-      label: "Create pool",
-      tx: buildCreatePool(api, left, right),
-      nativeDebits: [planck(constants.poolSetupFee)],
-    });
   }
 
   async function submitAdd() {
+    if (actionRef.current) return;
     if (!pool || !signer) {
       await wallet.connect();
       return;
     }
+    actionRef.current = true;
+    setBusy("prepare");
+    try {
     const decimals1 = assetDecimals(pool.asset1, maps.decimals);
     const decimals2 = assetDecimals(pool.asset2, maps.decimals);
     if (decimals1 === null || decimals2 === null) {
@@ -435,10 +463,18 @@ export function LiquidityScreen() {
         return depositStillExecutable(deposit.amount1, deposit.amount2, min1, min2, nextReserve1, nextReserve2);
       },
     });
+    } finally {
+      actionRef.current = false;
+      setBusy(null);
+    }
   }
 
   async function submitRemove() {
+    if (actionRef.current) return;
     if (!pool || !signer || !lpBalance) return;
+    actionRef.current = true;
+    setBusy("prepare");
+    try {
     const raw = rawLpUnits(pool.lpDecimals)
       ? (/^\d+$/.test(lpAmount.trim()) ? BigInt(lpAmount.trim()) : null)
       : parseDecimalToPlanck(lpAmount, pool.lpDecimals ?? 0);
@@ -479,6 +515,10 @@ export function LiquidityScreen() {
         return withdrawalStillExecutable(nextReserve1, nextReserve2, supply, raw, min1, min2);
       },
     });
+    } finally {
+      actionRef.current = false;
+      setBusy(null);
+    }
   }
 
   function fillFromReserves(side: 1 | 2, text: string) {
@@ -516,6 +556,49 @@ function rawLpUnits(decimals: number | null): boolean {
 
 function formatLp(balance: string, decimals: number | null): string {
   return decimals === null ? `${balance} base units` : formatUnits(balance, decimals);
+}
+
+function previewDeposit(
+  pool: PoolView | null,
+  amount1: string,
+  amount2: string,
+  slippage: string,
+  decimals: Map<string, number>,
+): { min1: bigint; min2: bigint; decimals1: number; decimals2: number } | null {
+  if (!pool) return null;
+  const decimals1 = assetDecimals(pool.asset1, decimals);
+  const decimals2 = assetDecimals(pool.asset2, decimals);
+  if (decimals1 === null || decimals2 === null) return null;
+  const desired1 = parseDecimalToPlanck(amount1, decimals1);
+  const desired2 = parseDecimalToPlanck(amount2, decimals2);
+  if (!desired1 || !desired2) return null;
+  const reserve1 = pool.reserve1 && /^\d+$/.test(pool.reserve1.replace(/,/g, "")) ? BigInt(pool.reserve1.replace(/,/g, "")) : null;
+  const reserve2 = pool.reserve2 && /^\d+$/.test(pool.reserve2.replace(/,/g, "")) ? BigInt(pool.reserve2.replace(/,/g, "")) : null;
+  const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
+  if (!deposit) return null;
+  const min1 = applySlippage(deposit.amount1, slippage);
+  const min2 = applySlippage(deposit.amount2, slippage);
+  if (min1 === null || min2 === null || min1 <= BigInt(0) || min2 <= BigInt(0)) return null;
+  return { min1, min2, decimals1, decimals2 };
+}
+
+function DepositMinimum({
+  pool,
+  preview,
+  symbols,
+}: {
+  pool: PoolView;
+  preview: { min1: bigint; min2: bigint; decimals1: number; decimals2: number } | null;
+  symbols: Map<string, string>;
+}) {
+  if (!preview) {
+    return <p className="text-xs leading-5 text-faint">Enter both amounts to see the minimum deposit after slippage. The signed call reads the reserves again.</p>;
+  }
+  return (
+    <p className="text-xs leading-5 text-faint">
+      Minimum deposit {formatUnits(preview.min1.toString(), preview.decimals1)} {assetLabel(pool.asset1, symbols)} and {formatUnits(preview.min2.toString(), preview.decimals2)} {assetLabel(pool.asset2, symbols)}. The signed call reads the reserves again and can differ.
+    </p>
+  );
 }
 
 function reserveText(pool: PoolView, maps: { symbols: Map<string, string>; decimals: Map<string, number> }): string {

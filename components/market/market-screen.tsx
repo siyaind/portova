@@ -45,17 +45,16 @@ export function MarketScreen() {
     setTrading(readTradingEnabled(api));
   }, [chain.status, chain.getApi]);
 
+  const collectionKey = chain.collections === null ? null : chain.collections.map((collection) => collection.id).join(",");
+
   useEffect(() => {
     const api = chain.getApi();
-    if (chain.status !== "live" || !api) return;
-    if (chain.collections === null) return;
+    if (chain.status !== "live" || !api || collectionKey === null) return;
     let cancelled = false;
     setScanState("reading");
     setScanError(null);
-    void scanListings(
-      api,
-      chain.collections.map((collection) => collection.id),
-    )
+    const ids = collectionKey ? collectionKey.split(",") : [];
+    void scanListings(api, ids)
       .then((next) => {
         if (cancelled) return;
         setListings(next);
@@ -70,7 +69,7 @@ export function MarketScreen() {
     return () => {
       cancelled = true;
     };
-  }, [chain.status, chain.collections, chain.getApi]);
+  }, [chain.status, chain.getApi, collectionKey]);
 
   const tradingOff = trading !== true;
   const saleKey = `${collectionId.trim()}:${itemId.trim()}`;

@@ -306,7 +306,7 @@ export function StudioScreen() {
               </Link>
             </p>
           </Stage>
-          <Stage label="Vesting" kind="unavailable">
+          <Stage label="Vesting" kind="disabled">
             Creator-token vesting is unavailable. Native vesting covers tPOT only, and this project does not schedule the creator token.
           </Stage>
           <Stage label="Liquidity" kind={poolKind}>
@@ -318,10 +318,10 @@ export function StudioScreen() {
               decimals={decimals}
             />
           </Stage>
-          <Stage label="Analytics" kind="unavailable">
+          <Stage label="Analytics" kind="disabled">
             No indexer is running, so this project has no chart and no volume.
           </Stage>
-          <Stage label="Activity" kind="unavailable">
+          <Stage label="Activity" kind="disabled">
             Project extrinsics are not indexed. Hashes from this browser session stay in the transaction tray, which is not a project history.
           </Stage>
         </ul>

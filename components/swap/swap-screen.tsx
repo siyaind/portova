@@ -18,10 +18,14 @@ import {
   applySlippage,
   assetDecimals,
   assetLabel,
+  balanceDigits,
   buildSwapExactIn,
   poolLabel,
-  quoteExactIn,
+  quoteForSwap,
+  readPoolPosition,
+  reservePaysSwap,
   reservesUsable,
+  sameAsset,
   type AssetRef,
   type PoolView,
 } from "@/lib/pools";
@@ -51,6 +55,7 @@ export function SwapScreen() {
   const [quoteState, setQuoteState] = useState<"idle" | "reading" | "none" | "ready" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [quotedAt, setQuotedAt] = useState<number | null>(null);
+  const [expiredKey, setExpiredKey] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -63,7 +68,7 @@ export function SwapScreen() {
   const usable = pool ? reservesUsable(pool) : false;
   const quoteKey =
     pool && amountIn && amountIn > BigInt(0)
-      ? swapQuoteKey(pool.lpToken, flip, amountIn.toString(), chain.blockNumber)
+      ? swapQuoteKey(pool.lpToken, flip, amountIn.toString(), null)
       : "";
   const liveQuote = quote && quote.key === quoteKey && quoteState === "ready" ? quote.out : null;
 
@@ -73,18 +78,24 @@ export function SwapScreen() {
 
   useEffect(() => {
     const api = chain.getApi();
-    if (!api || !pool || !assetIn || !assetOut || !usable || !quoteKey || !amountIn) {
+    if (!quoteKey) {
       setQuote(null);
+      setQuotedAt(null);
+      setExpiredKey(null);
       setQuoteState(usable ? "idle" : "none");
+      return;
+    }
+    if (expiredKey && expiredKey !== quoteKey) setExpiredKey(null);
+    if (!api || !pool || !assetIn || !assetOut || !usable || !amountIn || expiredKey === quoteKey) {
       return;
     }
     let cancelled = false;
     setQuoteState("reading");
     const timer = window.setTimeout(() => {
-      void quoteExactIn(api, assetIn, assetOut, amountIn)
+      void quoteForSwap(api, assetIn, assetOut, amountIn)
         .then((next) => {
           if (cancelled) return;
-          setQuote(next ? { key: quoteKey, out: next } : null);
+          setQuote(next ? { key: quoteKey, out: next.amount } : null);
           setQuotedAt(next ? Date.now() : null);
           setQuoteState(next ? "ready" : "none");
         })
@@ -99,7 +110,7 @@ export function SwapScreen() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [amountIn, assetIn, assetOut, chain.getApi, pool, quoteKey, usable]);
+  }, [amountIn, assetIn, assetOut, chain.getApi, expiredKey, pool, quoteKey, usable]);
 
   const minimum = liveQuote && /^\d+$/.test(liveQuote) ? applySlippage(BigInt(liveQuote), slippage) : null;
   const quoteSecondsLeft = quotedAt === null ? null : Math.max(0, Math.ceil((QUOTE_EXPIRY_MS - (now - quotedAt)) / 1000));
@@ -116,6 +127,8 @@ export function SwapScreen() {
       setQuote(null);
       setQuotedAt(null);
       setQuoteState("idle");
+      setExpiredKey(quoteKey);
+      setMessage(null);
     };
     if (delay <= 0) {
       clear();
@@ -123,7 +136,27 @@ export function SwapScreen() {
     }
     const timer = window.setTimeout(clear, delay);
     return () => window.clearTimeout(timer);
-  }, [quotedAt]);
+  }, [quoteKey, quotedAt]);
+
+  async function minimumReserveMessage(api: NonNullable<ReturnType<typeof chain.getApi>>, current: PoolView, assetOut: AssetRef): Promise<string> {
+    const fallback = "The node did not return a quote for this amount, so nothing was signed.";
+    if (assetOut.kind !== "asset") return fallback;
+    try {
+      const [minimum, position] = await Promise.all([
+        readAssetMinBalance(api, assetOut.id),
+        readPoolPosition(api, current.asset1, current.asset2, current.lpToken),
+      ]);
+      const reserve = sameAsset(current.asset1, assetOut) ? position.reserve1 : sameAsset(current.asset2, assetOut) ? position.reserve2 : null;
+      if (minimum === null || reservePaysSwap(reserve, minimum) !== false) return fallback;
+      const raw = balanceDigits(reserve);
+      const decimals = assetDecimals(assetOut, maps.decimals);
+      if (!raw || decimals === null) return fallback;
+      const symbol = assetLabel(assetOut, maps.symbols);
+      return `The pool holds ${formatUnits(raw, decimals)} ${symbol}. Its minimum balance is ${formatUnits(minimum.toString(), decimals)} ${symbol}, so a swap into ${symbol} has no quote until the pool holds more. Nothing was signed.`;
+    } catch {
+      return fallback;
+    }
+  }
 
   async function onSwap() {
     setMessage(null);
@@ -132,7 +165,7 @@ export function SwapScreen() {
       return;
     }
     if (quotedAt === null || quoteExpired(quotedAt, Date.now())) {
-      setMessage(`This quote is older than ${QUOTE_EXPIRY_MS / 1000} seconds. Wait for a new quote, then sign.`);
+      setMessage(`This quote is older than ${QUOTE_EXPIRY_MS / 1000} seconds. Change the amount to request another, then sign.`);
       return;
     }
     if (!pool || !assetIn || !assetOut || !usable || !amountIn || !liveQuote || !minimum || minimum <= BigInt(0)) {
@@ -145,25 +178,25 @@ export function SwapScreen() {
     setBusy(true);
     let tracked: string | null = null;
     try {
-      const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
-      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The finalized block hash could not be read.");
-      const fresh = await quoteExactIn(api, assetIn, assetOut, amountIn, hash);
-      const freshMin = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), slippage) : null;
+      const priced = await quoteForSwap(api, assetIn, assetOut, amountIn);
+      const fresh = priced?.amount ?? null;
+      const hash = priced?.blockHash ?? null;
+      const freshMin = fresh ? applySlippage(BigInt(fresh), slippage) : null;
       if (!fresh || !freshMin || freshMin <= BigInt(0)) {
         setQuote(null);
         setQuoteState("none");
-        setMessage("The node did not return a quote for this amount, so nothing was signed.");
+        setMessage(await minimumReserveMessage(api, pool, assetOut));
         return;
       }
       if (assetIn.kind === "asset") {
-        const at = await api.at(hash);
+        const at = hash ? await api.at(hash) : api;
         const stored = (await at.query.assets.account(assetIn.id, signer.address)) as unknown as {
           isNone?: boolean;
           unwrap?: () => { balance?: { toString(): string } };
         };
         const balanceText = stored.isNone ? "0" : stored.unwrap?.().balance?.toString().replace(/,/g, "") ?? "";
         const balance = /^\d+$/.test(balanceText) ? BigInt(balanceText) : null;
-        const minBalance = await readAssetMinBalance(api, assetIn.id, hash);
+        const minBalance = await readAssetMinBalance(api, assetIn.id, hash ?? undefined);
         if (balance === null || minBalance === null) {
           setMessage("The asset balance or minimum balance could not be read, so the wallet was not opened.");
           return;
@@ -179,18 +212,14 @@ export function SwapScreen() {
         }
       }
       const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, freshMin, signer.address);
-      const review = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n], hash);
+      const review = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n], hash ?? undefined);
       if (!review.ok) {
         setMessage(review.message);
         return;
       }
-      const quoteStartedAt = quotedAt;
       const quoteStillCovers = async () => {
-        if (quoteStartedAt === null || quoteExpired(quoteStartedAt, Date.now())) return false;
-        const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
-        if (!/^0x[0-9a-fA-F]{64}$/.test(againHash)) return false;
-        const again = await quoteExactIn(api, assetIn, assetOut, amountIn, againHash);
-        return again !== null && /^\d+$/.test(again) && swapStillExecutable(BigInt(again), freshMin);
+        const again = await quoteForSwap(api, assetIn, assetOut, amountIn);
+        return again !== null && swapStillExecutable(BigInt(again.amount), freshMin);
       };
       if (!(await quoteStillCovers())) {
         setMessage("The quote no longer covers your minimum. Nothing was submitted.");
@@ -298,11 +327,11 @@ export function SwapScreen() {
                 {busy ? "Waiting for the wallet…" : signer ? "Swap" : "Connect Substrate wallet"}
               </button>
               <p className="text-xs leading-5 text-faint">
-                {quoteSecondsLeft === null
-                  ? "A quote lasts 30 seconds. Approval after that is rejected, even if the minimum would still pass."
-                  : quoteSecondsLeft === 0
-                    ? "This quote has expired. Wait for the next one."
-                    : `Quote expires in ${quoteSecondsLeft}s. Approval after that is rejected, even if the minimum would still pass.`}
+                {expiredKey === quoteKey && quoteKey
+                  ? "This quote has expired. Change the amount to request another."
+                  : quoteSecondsLeft === null
+                    ? "A quote lasts 30 seconds. Change the amount after it expires to request another."
+                    : `Quote expires in ${quoteSecondsLeft}s. A signature can still be sent after that if the new quote covers the minimum.`}
               </p>
               <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
               {!signer && usable ? (

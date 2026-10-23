@@ -2,7 +2,9 @@ import type { ApiPromise } from "@polkadot/api";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { lpTokenFromPoolValue, parsePoolKey } from "@/lib/pool-key";
 import { readPositionAtFinalizedBlock, type PoolPosition } from "@/lib/pool-position";
+import { balanceDigits, reservePaysSwap } from "@/lib/reserve-quote";
 
+export { balanceDigits, reservePaysSwap };
 export type { PoolPosition };
 
 export type AssetRef = { kind: "native" } | { kind: "asset"; id: string };
@@ -116,7 +118,7 @@ export async function readReserves(
   };
   if (result.isNone || !result.unwrap) return [null, null];
   const pair = result.unwrap();
-  return [pair[0].toString(), pair[1].toString()];
+  return [balanceDigits(pair[0].toString()), balanceDigits(pair[1].toString())];
 }
 
 export async function readPools(api: ApiPromise): Promise<PoolView[]> {
@@ -175,8 +177,32 @@ export async function quoteExactIn(
     true,
   )) as unknown as { isNone?: boolean; unwrap?: () => { toString(): string } };
   if (quoted.isNone || !quoted.unwrap) return null;
-  const amount = quoted.unwrap().toString();
+  const amount = quoted.unwrap().toString().replace(/,/g, "");
   return /^\d+$/.test(amount) ? amount : null;
+}
+
+export async function quoteForSwap(
+  api: ApiPromise,
+  assetIn: AssetRef,
+  assetOut: AssetRef,
+  amountIn: bigint,
+): Promise<{ amount: string; blockHash: string | null } | null> {
+  let blockHash: string | null = null;
+  try {
+    const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
+    if (/^0x[0-9a-fA-F]{64}$/.test(hash)) blockHash = hash;
+  } catch {
+    blockHash = null;
+  }
+  const pinned = usableQuote(blockHash ? await quoteExactIn(api, assetIn, assetOut, amountIn, blockHash) : null);
+  if (pinned) return { amount: pinned, blockHash };
+  const latest = usableQuote(await quoteExactIn(api, assetIn, assetOut, amountIn));
+  return latest ? { amount: latest, blockHash: null } : null;
+}
+
+function usableQuote(value: string | null): string | null {
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  return value;
 }
 
 export async function readLpSupply(api: ApiPromise, lpToken: string): Promise<string | null> {
@@ -218,9 +244,12 @@ export async function readLpBalance(
   const stored = (await api.query.poolAssets.account(lpToken, address)) as unknown as {
     isNone?: boolean;
     unwrap?: () => { balance?: { toString(): string } };
+    balance?: { toString(): string };
   };
-  if (stored.isNone || !stored.unwrap) return "0";
-  return stored.unwrap().balance?.toString() ?? null;
+  if (stored.isNone === true) return "0";
+  const record = stored.unwrap ? stored.unwrap() : stored;
+  const balance = record.balance?.toString().replace(/,/g, "") ?? "";
+  return /^\d+$/.test(balance) ? balance : null;
 }
 
 export function buildCreatePool(api: ApiPromise, asset1: AssetRef, asset2: AssetRef) {

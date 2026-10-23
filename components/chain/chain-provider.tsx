@@ -35,7 +35,7 @@ type ChainValue = {
   poolCount: number | null;
   pools: PoolView[] | null;
   error: string | null;
-  readAccount: (address: string) => Promise<AccountSnapshot>;
+  readAccount: (address: string, onNative?: (snapshot: AccountSnapshot) => void) => Promise<AccountSnapshot>;
   refreshAssets: () => Promise<void>;
   refreshCollections: () => Promise<void>;
   refreshPools: () => Promise<void>;
@@ -197,6 +197,23 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
 
   const getApi = useCallback(() => apiRef.current, []);
 
+  const readAccountFor = useCallback(async (address: string, onNative?: (snapshot: AccountSnapshot) => void) => {
+    const api = apiRef.current;
+    if (!api) {
+      return {
+        free: null,
+        spendable: null,
+        holdings: [],
+        error: "The testnet connection is not available.",
+      };
+    }
+    try {
+      return await readAccount(api, address, assetsRef.current, onNative);
+    } catch (cause) {
+      return { free: null, spendable: null, holdings: [], error: errorText(cause) };
+    }
+  }, []);
+
   const value = useMemo<ChainValue>(
     () => ({
       status,
@@ -212,22 +229,7 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
       refreshCollections,
       refreshPools,
       getApi,
-      readAccount: async (address: string) => {
-        const api = apiRef.current;
-        if (!api) {
-          return {
-            free: null,
-            spendable: null,
-            holdings: [],
-            error: "The testnet connection is not available.",
-          };
-        }
-        try {
-          return await readAccount(api, address, assetsRef.current);
-        } catch (cause) {
-          return { free: null, spendable: null, holdings: [], error: errorText(cause) };
-        }
-      },
+      readAccount: readAccountFor,
     }),
     [
       status,
@@ -243,6 +245,7 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
       refreshPools,
       getApi,
       pools,
+      readAccountFor,
     ],
   );
 

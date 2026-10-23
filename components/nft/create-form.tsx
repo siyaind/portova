@@ -553,7 +553,15 @@ export function CreateCollectionForm() {
             />
             <Preview
               term={`Estimated fee (${NATIVE_SYMBOL})`}
-              value={fee ? formatUnits(fee, NATIVE_DECIMALS, 6) : feeError ? "Unavailable" : params ? "Estimating…" : "—"}
+              value={
+                fee
+                  ? `${formatUnits(fee, NATIVE_DECIMALS, 6)} ${NATIVE_SYMBOL}`
+                  : feeError
+                    ? "Unavailable"
+                    : params
+                      ? "Estimating…"
+                      : "—"
+              }
             />
           </dl>
           {feeError ? <p className="text-xs leading-5 text-warn">{feeError}</p> : null}

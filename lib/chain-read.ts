@@ -193,45 +193,53 @@ export async function readAccount(
   api: ApiPromise,
   address: string,
   assets: AssetRow[],
+  onNative?: (snapshot: AccountSnapshot) => void,
 ): Promise<AccountSnapshot> {
+  let native: AccountSnapshot;
   try {
-  const account = (await api.query.system.account(address)) as unknown as {
-    data: {
-      free: { toString(): string };
-      reserved?: { toString(): string };
-      frozen?: { toString(): string };
-      miscFrozen?: { toString(): string };
-      feeFrozen?: { toString(): string };
+    const account = (await api.query.system.account(address)) as unknown as {
+      data: {
+        free: { toString(): string };
+        reserved?: { toString(): string };
+        frozen?: { toString(): string };
+        miscFrozen?: { toString(): string };
+        feeFrozen?: { toString(): string };
+      };
     };
-  };
-  const free = digits(account.data.free);
-  const reserved = digits(account.data.reserved);
-  const frozen = largestFrozen(account.data);
-  const existentialDeposit = digits(
-    (api.consts.balances as { existentialDeposit?: { toString(): string } }).existentialDeposit,
-  );
-  const spendable = keptAliveSpendable({ free, reserved, frozen, existentialDeposit });
-  const holdings: HoldingRow[] = [];
+    const free = digits(account.data.free);
+    const reserved = digits(account.data.reserved);
+    const frozen = largestFrozen(account.data);
+    const existentialDeposit = digits(
+      (api.consts.balances as { existentialDeposit?: { toString(): string } }).existentialDeposit,
+    );
+    native = {
+      free,
+      spendable: keptAliveSpendable({ free, reserved, frozen, existentialDeposit }),
+      holdings: [],
+      error: null,
+    };
+  } catch (cause) {
+    return { free: null, spendable: null, holdings: [], error: errorText(cause) };
+  }
+  onNative?.(native);
+  const holdings = (
+    await Promise.all(assets.map(async (asset) => readHolding(api, asset, address)))
+  ).filter((row): row is HoldingRow => row !== null);
+  return { ...native, holdings };
+}
 
-  for (const asset of assets) {
+async function readHolding(api: ApiPromise, asset: AssetRow, address: string): Promise<HoldingRow | null> {
+  try {
     const stored = await api.query.assets.account(asset.id, address);
     const optional = stored as unknown as {
       isNone?: boolean;
       unwrap?: () => { balance?: { toString: () => string } };
     };
-    if (optional.isNone) continue;
-    const balance = optional.unwrap?.().balance?.toString();
-    if (!balance || balance === "0") continue;
-    holdings.push({
-      id: asset.id,
-      symbol: asset.symbol,
-      decimals: asset.decimals,
-      balance,
-    });
-  }
-
-  return { free, spendable, holdings, error: null };
-  } catch (cause) {
-    return { free: null, spendable: null, holdings: [], error: errorText(cause) };
+    if (optional.isNone) return null;
+    const balance = optional.unwrap?.().balance?.toString().replace(/,/g, "") ?? "";
+    if (!/^\d+$/.test(balance) || balance === "0") return null;
+    return { id: asset.id, symbol: asset.symbol, decimals: asset.decimals, balance };
+  } catch {
+    return null;
   }
 }
