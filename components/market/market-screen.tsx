@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useChain } from "@/components/chain/chain-provider";
@@ -11,6 +11,7 @@ import { signAndSend } from "@/lib/assets";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
+import { saleResultIsCurrent } from "@/lib/sale-request";
 import { readItemProfile } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { isProceedsAddress } from "@/lib/project";
@@ -72,33 +73,42 @@ export function MarketScreen() {
   const tradingOff = trading !== true;
   const saleKey = `${collectionId.trim()}:${itemId.trim()}`;
   const idsValid = /^\d+$/.test(collectionId.trim()) && /^\d+$/.test(itemId.trim());
+  const saleRequest = useRef(0);
 
   useEffect(() => {
+    saleRequest.current += 1;
     setSale(null);
   }, [saleKey]);
 
   async function loadSale() {
     setMessage(null);
+    const request = ++saleRequest.current;
+    const key = saleKey;
     const api = chain.getApi();
     if (!api || !idsValid) {
       setMessage("Enter a collection id and an item id.");
       return;
     }
+    const collection = collectionId.trim();
+    const itemIdValue = itemId.trim();
+    const stillCurrent = () => saleResultIsCurrent(request, saleRequest.current, key, `${collectionId.trim()}:${itemId.trim()}`);
     try {
       const [nextSale, item] = await Promise.all([
-        readItemSale(api, collectionId.trim(), itemId.trim()),
-        readItemProfile(api, collectionId.trim(), itemId.trim()),
+        readItemSale(api, collection, itemIdValue),
+        readItemProfile(api, collection, itemIdValue),
       ]);
+      if (!stillCurrent()) return;
       const listing: Listing = {
         ...nextSale,
-        collectionId: collectionId.trim(),
-        itemId: itemId.trim(),
+        collectionId: collection,
+        itemId: itemIdValue,
         owner: item.owner,
         metadata: item.metadata,
       };
       setSale(listing);
       if (nextSale.price) setBid(formatUnits(nextSale.price, NATIVE_DECIMALS));
     } catch (cause) {
+      if (!stillCurrent()) return;
       setMessage(errorText(cause));
     }
   }

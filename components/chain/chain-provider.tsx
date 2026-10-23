@@ -19,6 +19,7 @@ import {
 } from "@/lib/chain-read";
 import { readCollectionList, type CollectionSummary } from "@/lib/nfts";
 import { readPools, type PoolView } from "@/lib/pools";
+import { applyChainSnapshot } from "@/lib/chain-snapshot";
 import { errorText } from "@/lib/format";
 import { SUBSTRATE_WS } from "@/lib/network";
 
@@ -73,15 +74,15 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
           readPools(api).catch(() => null),
           countEntries(api, "assetConversion", "pools").catch(() => null),
         ]);
-      if (cancelled) return;
-      assetsRef.current = assetRows ?? [];
-      setChainName(chain.toString());
-      setBlockNumber(header.number.toString());
-      setAssets(assetRows);
-      setCollections(collectionRows);
-      setCollectionCount(collectionTotal);
-      setPools(poolRows);
-      setPoolCount(poolTotal);
+      return {
+        chainName: chain.toString(),
+        blockNumber: header.number.toString(),
+        assets: assetRows,
+        collections: collectionRows,
+        collectionCount: collectionTotal,
+        pools: poolRows,
+        poolCount: poolTotal,
+      };
     }
 
     async function ensureHeads(api: ApiPromise) {
@@ -100,8 +101,18 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
     async function reload(api: ApiPromise) {
       const ticket = ++load;
       try {
-        await loadSnapshot(api);
-        if (cancelled || ticket !== load) return;
+        const snapshot = await loadSnapshot(api);
+        const applied = applyChainSnapshot(ticket, load, cancelled, snapshot, (value) => {
+          assetsRef.current = value.assets ?? [];
+          setChainName(value.chainName);
+          setBlockNumber(value.blockNumber);
+          setAssets(value.assets);
+          setCollections(value.collections);
+          setCollectionCount(value.collectionCount);
+          setPools(value.pools);
+          setPoolCount(value.poolCount);
+        });
+        if (!applied) return;
         await ensureHeads(api);
         if (cancelled || ticket !== load) return;
         setStatus("live");

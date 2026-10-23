@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { optimalDeposit, pairedAmount, swapQuoteKey } from "./liquidity-math.ts";
+import { assetRemainder, callNativeCost, optimalDeposit, pairedAmount, removalMinimum, swapQuoteKey } from "./liquidity-math.ts";
 
 test("an unbalanced deposit is reduced to the reserve ratio before slippage", () => {
   const quote = optimalDeposit(100n, 100n, 1000n, 2000n);
@@ -26,6 +26,24 @@ test("a zero optimal amount is refused", () => {
 test("one deposit side fills the other from the reserve ratio", () => {
   assert.equal(pairedAmount(100000000000000n, 100000000000000n, 1000000000000000000000n), 1000000000000000000000n);
   assert.equal(pairedAmount(1n, 10n, 1n), null);
+});
+
+test("a withdrawal minimum uses the supply from the same snapshot as the reserves", () => {
+  const thin = removalMinimum("1000", "100", 10n, "0.5");
+  const diluted = removalMinimum("1000", "200", 10n, "0.5");
+  assert.equal(thin, 99n);
+  assert.equal(diluted, 49n);
+  assert.ok(thin !== null && diluted !== null && thin > diluted);
+  assert.equal(removalMinimum("1000", null, 10n, "0.5"), null);
+});
+
+test("a deposit cost is refused when the fee or a required deposit is unknown", () => {
+  assert.equal(callNativeCost([100n, 5n, 0n]), 105n);
+  assert.equal(callNativeCost([100n, null, 0n]), null);
+  assert.equal(assetRemainder(100n, 90n, 20n), "dust");
+  assert.equal(assetRemainder(100n, 80n, 20n), "ok");
+  assert.equal(assetRemainder(100n, 101n, 1n), "short");
+  assert.equal(assetRemainder(100n, 100n, 20n), "ok");
 });
 
 test("a quote key changes with the pool, direction, amount, and block", () => {

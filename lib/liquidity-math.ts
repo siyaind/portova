@@ -31,6 +31,40 @@ export function optimalDeposit(
   return null;
 }
 
+export function callNativeCost(parts: Array<bigint | null>): bigint | null {
+  let total = BigInt(0);
+  for (const part of parts) {
+    if (part === null || part < BigInt(0)) return null;
+    total += part;
+  }
+  return total;
+}
+
+export function assetRemainder(balance: bigint, spend: bigint, minBalance: bigint): "ok" | "short" | "dust" {
+  if (spend < BigInt(0) || minBalance < BigInt(0) || spend > balance) return "short";
+  const left = balance - spend;
+  if (left !== BigInt(0) && left < minBalance) return "dust";
+  return "ok";
+}
+
+export function removalMinimum(
+  reserve: string | null,
+  supply: string | null,
+  burn: bigint,
+  slippage: string,
+): bigint | null {
+  const reserveRaw = reserve?.replace(/,/g, "") ?? "";
+  const supplyRawText = supply?.replace(/,/g, "") ?? "";
+  if (!/^\d+$/.test(reserveRaw) || !/^\d+$/.test(supplyRawText) || burn <= BigInt(0)) return null;
+  const supplyRaw = BigInt(supplyRawText);
+  if (supplyRaw <= BigInt(0)) return null;
+  const expected = (BigInt(reserveRaw) * burn) / supplyRaw;
+  const bps = slippage === "0.1" ? 10n : slippage === "0.5" ? 50n : slippage === "1" ? 100n : null;
+  if (bps === null || expected <= BigInt(0)) return null;
+  const minimum = (expected * (10000n - bps)) / 10000n;
+  return minimum > BigInt(0) ? minimum : null;
+}
+
 export function swapQuoteKey(lpToken: string, flipped: boolean, amountIn: string, block: string | null): string {
   return `${lpToken}|${flipped ? "1" : "0"}|${amountIn}|${block ?? "no-block"}`;
 }

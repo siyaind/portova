@@ -73,6 +73,7 @@ test("dispatch events are matched by extrinsic index", () => {
   assert.equal(dispatchOutcome([failedEvent(1), successEvent(0)], 0), "success");
   assert.equal(dispatchOutcome([successEvent(0), failedEvent(1)], 1), "failed");
   assert.equal(dispatchOutcome([successEvent(0)], 1), "unknown");
+  assert.equal(dispatchOutcome([successEvent(0), failedEvent(0)], 0), "failed");
 });
 
 test("a hash still in the pool stays pending", async () => {

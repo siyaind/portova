@@ -18,6 +18,7 @@ import {
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { outcomeWithoutHash, signingLabel, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { isProceedsAddress } from "@/lib/project";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink placeholder:text-faint";
@@ -87,6 +88,7 @@ export function CreateTokenForm() {
   const nameValid = nameBytes > 0 && nameBytes <= limit;
   const symbolValid = symbolBytes > 0 && symbolBytes <= limit;
   const beneficiaryValue = beneficiary.trim() || signer?.address || "";
+  const beneficiaryValid = isProceedsAddress(beneficiaryValue);
   const params: CreateMintParams | null =
     signer &&
     constants &&
@@ -167,6 +169,7 @@ export function CreateTokenForm() {
     decimalsValid,
     supplyRaw,
     minRaw,
+    beneficiaryValid,
   });
 
   async function onSubmit(event: React.FormEvent) {
@@ -176,8 +179,11 @@ export function CreateTokenForm() {
       await wallet.connect();
       return;
     }
-    if (!params || problems.length > 0) {
+    if (!params || problems.length > 0 || !isProceedsAddress(params.beneficiary)) {
       setAttempted(true);
+      if (params && !isProceedsAddress(params.beneficiary)) {
+        setFormError("The beneficiary is not a testnet address. Nothing was submitted.");
+      }
       return;
     }
     const api = chain.getApi();
@@ -399,6 +405,7 @@ function problemsFor(input: {
   decimalsValid: boolean;
   supplyRaw: bigint | null;
   minRaw: bigint | null;
+  beneficiaryValid: boolean;
 }): string[] {
   const problems: string[] = [];
   if (!input.chainLive) problems.push("The testnet connection is not ready.");
@@ -421,5 +428,6 @@ function problemsFor(input: {
   ) {
     problems.push("Initial supply must be at least the minimum balance.");
   }
+  if (!input.beneficiaryValid) problems.push("The beneficiary must be a testnet address.");
   return problems;
 }
