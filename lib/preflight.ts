@@ -1,5 +1,6 @@
 import type { ApiPromise } from "@polkadot/api";
 import { keptAliveSpendable, largestFrozenBalance, planck } from "./balance.ts";
+import { guardedFee } from "./fee-evidence.ts";
 import { formatUnits } from "./format.ts";
 
 export type CheckedCall<T> = {
@@ -37,6 +38,7 @@ export async function reviewCall<T>(input: {
   accountAt: (blockHash: string, payer: string) => Promise<AccountParts>;
   decimals?: number;
   symbol?: string;
+  feeShortfall?: bigint;
 }): Promise<CheckedCall<T> | PreflightRefusal> {
   const decimals = input.decimals ?? 14;
   const symbol = input.symbol ?? "tPOT";
@@ -44,10 +46,8 @@ export async function reviewCall<T>(input: {
   try {
     blockHash = await input.finalizedHash();
     const account = await input.accountAt(blockHash, input.payer);
-    const info = await (
-      input.tx.paymentInfo as (payer: string, blockHash: string) => Promise<{ partialFee: { toString(): string } }>
-    )(input.payer, blockHash);
-    const fee = planck(info.partialFee.toString());
+    const info = await input.tx.paymentInfo(input.payer);
+    const fee = guardedFee(planck(info.partialFee.toString()), input.feeShortfall);
     const spendableText = keptAliveSpendable(account);
     const spendable = planck(spendableText);
     const nativeNeed = sumDebits(fee, input.nativeDebits);

@@ -11,8 +11,8 @@ import { signAndSend } from "@/lib/assets";
 import { readAssetMinBalance } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { assetRemainder, swapQuoteKey } from "@/lib/liquidity-math";
-import { sameFacts } from "@/lib/pool-position";
 import { reviewExtrinsic } from "@/lib/preflight";
+import { QUOTE_EXPIRY_MS, WALLET_MOVE_WARNING, quoteExpired, swapStillExecutable } from "@/lib/quote-window";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import {
   applySlippage,
@@ -50,6 +50,7 @@ export function SwapScreen() {
   const [quote, setQuote] = useState<{ key: string; out: string } | null>(null);
   const [quoteState, setQuoteState] = useState<"idle" | "reading" | "none" | "ready" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [quotedAt, setQuotedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -83,6 +84,7 @@ export function SwapScreen() {
         .then((next) => {
           if (cancelled) return;
           setQuote(next ? { key: quoteKey, out: next } : null);
+          setQuotedAt(next ? Date.now() : null);
           setQuoteState(next ? "ready" : "none");
         })
         .catch(() => {
@@ -104,6 +106,10 @@ export function SwapScreen() {
     setMessage(null);
     if (!signer) {
       await wallet.connect();
+      return;
+    }
+    if (quotedAt === null || quoteExpired(quotedAt, Date.now())) {
+      setMessage(`This quote is older than ${QUOTE_EXPIRY_MS / 1000} seconds. Wait for a new quote, then sign.`);
       return;
     }
     if (!pool || !assetIn || !assetOut || !usable || !amountIn || !liveQuote || !minimum || minimum <= BigInt(0)) {
@@ -155,12 +161,14 @@ export function SwapScreen() {
         setMessage(review.message);
         return;
       }
-      const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
-      const again = /^0x[0-9a-fA-F]{64}$/.test(againHash)
-        ? await quoteExactIn(api, assetIn, assetOut, amountIn, againHash)
-        : null;
-      if (!sameFacts([fresh], [again])) {
-        setMessage("The quote changed after the fee check. Nothing was submitted.");
+      const quoteStillCovers = async () => {
+        const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
+        if (!/^0x[0-9a-fA-F]{64}$/.test(againHash)) return false;
+        const again = await quoteExactIn(api, assetIn, assetOut, amountIn, againHash);
+        return again !== null && /^\d+$/.test(again) && swapStillExecutable(BigInt(again), freshMin);
+      };
+      if (!(await quoteStillCovers())) {
+        setMessage("The quote no longer covers your minimum. Nothing was submitted.");
         return;
       }
       tracked = crypto.randomUUID();
@@ -170,7 +178,7 @@ export function SwapScreen() {
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       const result = await signAndSend(api, review.tx, signer.address, injected.signer, (update) => {
         if (tracked) txs.patch(tracked, update);
-      });
+      }, undefined, quoteStillCovers);
       if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
@@ -264,6 +272,7 @@ export function SwapScreen() {
               >
                 {busy ? "Waiting for the wallet…" : signer ? "Swap" : "Connect Substrate wallet"}
               </button>
+              <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
               {!signer && usable ? (
                 <p className="text-xs text-faint">The button stays off until a quote exists. Connecting does not submit the swap.</p>
               ) : null}

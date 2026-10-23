@@ -31,8 +31,8 @@ import {
   type PoolView,
 } from "@/lib/pools";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
-import { sameFacts } from "@/lib/pool-position";
 import { reviewExtrinsic } from "@/lib/preflight";
+import { WALLET_MOVE_WARNING, depositStillExecutable, withdrawalStillExecutable } from "@/lib/quote-window";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink";
@@ -141,8 +141,14 @@ export function LiquidityScreen() {
     setBusy(input.label);
     txs.push({ id, label: input.label, status: "signing" });
     try {
-      const result = await signAndSend(api, review.tx, signer.address, (await injectedSigner(signer.source)).signer, (update) =>
-        txs.patch(id, update),
+      const result = await signAndSend(
+        api,
+        review.tx,
+        signer.address,
+        (await injectedSigner(signer.source)).signer,
+        (update) => txs.patch(id, update),
+        undefined,
+        input.stillCurrent,
       );
       if (result.status === "finalized" || result.status === "included") {
         if (refresh) await chain.refreshPools().catch(() => undefined);
@@ -247,6 +253,7 @@ export function LiquidityScreen() {
               >
                 {busy === "Add liquidity" ? "Waiting for the wallet…" : signer ? "Add liquidity" : "Connect Substrate wallet"}
               </button>
+              <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
               {addMessage ? <p className="text-sm leading-6 text-warn">{addMessage}</p> : null}
             </>
           ) : (
@@ -293,6 +300,7 @@ export function LiquidityScreen() {
             >
               {busy === "Remove liquidity" ? "Waiting for the wallet…" : "Remove liquidity"}
             </button>
+            <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
           </>
         )}
         {message ? <p className="text-sm leading-6 text-warn">{message}</p> : null}
@@ -422,10 +430,9 @@ export function LiquidityScreen() {
       blockHash: position.blockHash,
       stillCurrent: async () => {
         const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
-        return sameFacts(
-          [position.reserve1, position.reserve2, position.lpSupply],
-          [next.reserve1, next.reserve2, next.lpSupply],
-        );
+        const nextReserve1 = next.reserve1 && /^\d+$/.test(next.reserve1) ? BigInt(next.reserve1) : null;
+        const nextReserve2 = next.reserve2 && /^\d+$/.test(next.reserve2) ? BigInt(next.reserve2) : null;
+        return depositStillExecutable(deposit.amount1, deposit.amount2, min1, min2, nextReserve1, nextReserve2);
       },
     });
   }
@@ -465,10 +472,11 @@ export function LiquidityScreen() {
       blockHash: position.blockHash,
       stillCurrent: async () => {
         const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
-        return sameFacts(
-          [position.reserve1, position.reserve2, position.lpSupply],
-          [next.reserve1, next.reserve2, next.lpSupply],
-        );
+        const nextReserve1 = next.reserve1 && /^\d+$/.test(next.reserve1) ? BigInt(next.reserve1) : null;
+        const nextReserve2 = next.reserve2 && /^\d+$/.test(next.reserve2) ? BigInt(next.reserve2) : null;
+        const supply = next.lpSupply && /^\d+$/.test(next.lpSupply) ? BigInt(next.lpSupply) : null;
+        if (nextReserve1 === null || nextReserve2 === null || supply === null) return false;
+        return withdrawalStillExecutable(nextReserve1, nextReserve2, supply, raw, min1, min2);
       },
     });
   }

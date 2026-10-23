@@ -10,7 +10,8 @@ import { signAndSend } from "@/lib/assets";
 import { outcomeWithoutHash, signingLabel, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
-  buildCollectionMintTx,
+  buildCollectionCreateTx,
+  buildCollectionFinishTx,
   byteDeposit,
   createdCollectionUpdate,
   collectionMintSteps,
@@ -37,6 +38,7 @@ export function CreateCollectionForm() {
   const [constants, setConstants] = useState<NftConstants | null>(null);
   const [constantsError, setConstantsError] = useState<string | null>(null);
   const [predicted, setPredicted] = useState<number | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [collectionUri, setCollectionUri] = useState("");
   const [itemUri, setItemUri] = useState("");
   const [maxSupply, setMaxSupply] = useState("");
@@ -53,6 +55,7 @@ export function CreateCollectionForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
   const previousSigner = useRef<string | null>(null);
+  const pendingKey = "portova.pending-collection.v1";
 
   useEffect(() => {
     if (!signer) return;
@@ -72,6 +75,8 @@ export function CreateCollectionForm() {
     setConstants(next);
     setConstantsError(null);
     let cancelled = false;
+    const stored = window.sessionStorage.getItem(pendingKey);
+    if (stored && /^\d+$/.test(stored)) setCreatedId(stored);
     void predictCollectionId(api).then((id) => {
       if (!cancelled) setPredicted(id);
     });
@@ -101,7 +106,6 @@ export function CreateCollectionForm() {
 
   const params: CollectionMintParams | null =
     constants &&
-    predicted !== null &&
     collectionValid &&
     itemValid &&
     itemValidId &&
@@ -110,7 +114,7 @@ export function CreateCollectionForm() {
     (priceRaw !== null || !publicMint || price.trim() === "")
       ? {
           admin: signer?.address ?? FEE_ACCOUNT,
-          collectionId: predicted,
+          collectionId: createdId ? Number(createdId) : 0,
           transferable,
           metadataEditable: editableMetadata,
           maxSupply: supplyNumber,
@@ -148,7 +152,7 @@ export function CreateCollectionForm() {
     let cancelled = false;
     const payer = signer?.address ?? FEE_ACCOUNT;
     const timer = window.setTimeout(() => {
-      buildCollectionMintTx(api, params)
+      (createdId ? buildCollectionFinishTx(api, params) : buildCollectionCreateTx(api, params))
         .paymentInfo(payer)
         .then((info) => {
           if (!cancelled) {
@@ -220,22 +224,16 @@ export function CreateCollectionForm() {
     setSubmitPhase("signing");
     let tracked: string | null = null;
     try {
-      const current = await predictCollectionId(api);
-      if (current !== signed.collectionId) {
-        const message = `The next collection id changed to ${current}. Review the form and sign again. Nothing was submitted.`;
-        setPredicted(current);
-        setFormError(message);
-        setSubmitPhase(null);
-        return;
-      }
-      const tx = buildCollectionMintTx(api, signed);
-      const review = await reviewExtrinsic(api, tx, signer.address, [
-        planck(constants.collectionDeposit),
-        planck(constants.itemDeposit),
-        byteDeposit(constants, signed.collectionMetadata),
-        signed.itemMetadata ? byteDeposit(constants, signed.itemMetadata) : 0n,
-        signed.price ?? 0n,
-      ]);
+      const finishing = createdId !== null;
+      const tx = finishing ? buildCollectionFinishTx(api, signed) : buildCollectionCreateTx(api, signed);
+      const review = await reviewExtrinsic(api, tx, signer.address, finishing
+        ? [
+            planck(constants.itemDeposit),
+            byteDeposit(constants, signed.collectionMetadata),
+            signed.itemMetadata ? byteDeposit(constants, signed.itemMetadata) : 0n,
+            signed.price ?? 0n,
+          ]
+        : [planck(constants.collectionDeposit)]);
       if (!review.ok) {
         setFormError(review.message);
         setSubmitPhase(null);
@@ -243,7 +241,7 @@ export function CreateCollectionForm() {
       }
       const id = crypto.randomUUID();
       tracked = id;
-      txs.push({ id, label: `Create collection ${signed.collectionId}`, status: "signing" });
+      txs.push({ id, label: finishing ? `Finish collection ${signed.collectionId}` : "Create collection", status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
@@ -265,9 +263,21 @@ export function CreateCollectionForm() {
       if (result.status === "finalized" || result.status === "included") {
         await chain.refreshCollections().catch(() => undefined);
       }
-      const collectionId = result.collectionId ?? String(signed.collectionId);
+      if (!finishing) {
+        if (result.status !== "finalized" || !result.collectionId) {
+          setFormError(result.status === "finalized"
+            ? "The create was finalized, but the Created event did not include an id. The app will not guess one."
+            : txResultMessage(result.status, result.error));
+          return;
+        }
+        window.sessionStorage.setItem(pendingKey, result.collectionId);
+        setCreatedId(result.collectionId);
+        setFormError(`Collection ${result.collectionId} is on chain. Sign once more to add metadata and mint the first item.`);
+        return;
+      }
       if (result.status === "finalized") {
-        router.push(`/collection/${collectionId}?item=${signed.itemId}`);
+        window.sessionStorage.removeItem(pendingKey);
+        router.push(`/collection/${signed.collectionId}?item=${signed.itemId}`);
         return;
       }
       setFormError(txResultMessage(result.status, result.error));
@@ -354,9 +364,14 @@ export function CreateCollectionForm() {
           <Field label="Mint to" hint="Defaults to the signing account">
             <input className={`${FIELD} font-mono text-xs`} value={mintTo} onChange={(event) => setMintTo(event.target.value)} spellCheck={false} />
           </Field>
-          <Field label="Predicted collection id" hint="Assigned by the chain">
-            <input className={FIELD} value={predicted === null ? "" : String(predicted)} disabled />
+          <Field label={createdId ? "Created collection id" : "Next collection id"} hint="Not used inside the create call">
+            <input className={FIELD} value={createdId ?? (predicted === null ? "" : String(predicted))} disabled />
           </Field>
+          <p className="text-xs leading-5 text-faint">
+            {createdId
+              ? `Collection ${createdId} is already on chain. The next signature writes metadata and mints item ${itemId} on that id.`
+              : "The first signature only creates the collection. The chain assigns the id. Metadata and the first mint are a second signature after that id is known."}
+          </p>
           {attempted && problems.length > 0 ? (
             <ul className="space-y-1 text-sm text-warn">
               {problems.map((problem) => (
@@ -374,10 +389,10 @@ export function CreateCollectionForm() {
             disabled={submitting || chain.status !== "live"}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? signingLabel(submitPhase, "Waiting for the wallet…") : signer ? "Create and mint" : "Connect Substrate wallet"}
+            {submitting ? signingLabel(submitPhase, "Waiting for the wallet…") : signer ? (createdId ? "Add metadata and mint" : "Create collection") : "Connect Substrate wallet"}
           </button>
           <p className="text-xs leading-5 text-faint">
-            Connecting only reads accounts. The collection batch is a separate signature. Mint
+            Connecting only reads accounts. Create and the metadata mint are separate signatures. Mint
             proceeds are not moved into a pool.
           </p>
         </Panel>
@@ -485,7 +500,6 @@ function problemsFor(input: {
   const problems: string[] = [];
   if (!input.chainLive) problems.push("The testnet connection is not ready.");
   if (!input.constants) problems.push("Deposit constants have not loaded.");
-  if (input.predicted === null) problems.push("The next collection id has not loaded.");
   if (!input.collectionValid) {
     problems.push(`Collection metadata must be 1 to ${input.limit} bytes. This one is ${input.collectionBytes}.`);
   }

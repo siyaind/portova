@@ -21,7 +21,8 @@ import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { readTradingEnabled } from "@/lib/market";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import {
-  buildCollectionMintTx,
+  buildCollectionCreateTx,
+  buildCollectionFinishTx,
   byteDeposit,
   createdCollectionUpdate,
   predictCollectionId,
@@ -29,8 +30,8 @@ import {
 } from "@/lib/nfts";
 import { applySlippage, assetDecimals, buildAddLiquidity, buildCreatePool, buildSwapExactIn, missingLpAccountDeposit, quoteExactIn, readPoolConstants, readPoolPosition, readPools, sameAsset, type AssetRef, type PoolView } from "@/lib/pools";
 import { optimalDeposit } from "@/lib/liquidity-math";
-import { sameFacts } from "@/lib/pool-position";
 import { reviewExtrinsic } from "@/lib/preflight";
+import { depositStillExecutable, swapStillExecutable } from "@/lib/quote-window";
 import { parseRun, rememberEvidence, type RunEvidence, type RunStepName } from "@/lib/testnet-run";
 import { outcomeWithoutHash, txResultMessage, type TxStatus } from "@/lib/tx-result";
 
@@ -145,7 +146,15 @@ export function RunScreen() {
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
-      return await signAndSend(api, review.tx, signer.address, injected.signer, (update) => txs.patch(id, update), decorate);
+      return await signAndSend(
+        api,
+        review.tx,
+        signer.address,
+        injected.signer,
+        (update) => txs.patch(id, update),
+        decorate,
+        stillCurrent,
+      );
     } catch (cause) {
       const text = errorText(cause);
       const failed = outcomeWithoutHash(text);
@@ -212,16 +221,14 @@ export function RunScreen() {
       return;
     }
     const constants = readNftConstants(api);
-    const predicted = await predictCollectionId(api).catch(() => null);
-    if (!constants || predicted === null || !collectionUri.trim()) {
-      setNotice("Collection constants or the next collection id are not ready, so nothing was signed.");
+    if (!constants || !collectionUri.trim()) {
+      setNotice("Collection constants are not ready, so nothing was signed.");
       return;
     }
-    setCollectionId(String(predicted));
     const itemMetadata = "ipfs://portova/run-item";
-    const tx = buildCollectionMintTx(api, {
+    const draft = {
       admin: signer.address,
-      collectionId: predicted,
+      collectionId: 0,
       transferable: true,
       metadataEditable: false,
       maxSupply: 1,
@@ -231,25 +238,37 @@ export function RunScreen() {
       itemMetadata,
       itemId: 0,
       mintTo: signer.address,
-    });
-    const result = await sign(
-      `Create collection ${predicted}`,
-      tx,
+    };
+    const created = await sign(
+      "Create collection",
+      buildCollectionCreateTx(api, draft),
+      [planck(constants.collectionDeposit)],
+      createdCollectionUpdate,
+    );
+    if (!created) return;
+    const confirmed = created.collectionId && created.status === "finalized" ? created.collectionId : undefined;
+    record("nft", "Create collection", created, confirmed);
+    if (!confirmed) {
+      setNotice(created.status === "finalized"
+        ? "The create was finalized, but the Created event did not include an id. Metadata was not submitted."
+        : txResultMessage(created.status, created.error));
+      return;
+    }
+    setCollectionId(confirmed);
+    linkProject({ collectionId: confirmed });
+    const finished = await sign(
+      `Finish collection ${confirmed}`,
+      buildCollectionFinishTx(api, { ...draft, collectionId: Number(confirmed) }),
       [
-        planck(constants.collectionDeposit),
         planck(constants.itemDeposit),
         byteDeposit(constants, collectionUri.trim()),
         byteDeposit(constants, itemMetadata),
         0n,
       ],
-      createdCollectionUpdate,
     );
-    if (!result) return;
-    const confirmed = result.collectionId && result.status === "finalized" ? result.collectionId : undefined;
-    record("nft", `Create collection ${predicted}`, result, confirmed);
-    if (confirmed) setCollectionId(confirmed);
-    if (result.status === "finalized" || result.status === "included") await chain.refreshCollections().catch(() => undefined);
-    if (confirmed) linkProject({ collectionId: confirmed });
+    if (!finished) return;
+    record("nft", `Finish collection ${confirmed}`, finished, confirmed);
+    if (finished.status === "finalized" || finished.status === "included") await chain.refreshCollections().catch(() => undefined);
   }
 
   async function createPool() {
@@ -324,10 +343,9 @@ export function RunScreen() {
       position.blockHash,
       async () => {
         const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
-        return sameFacts(
-          [position.reserve1, position.reserve2, position.lpSupply],
-          [next.reserve1, next.reserve2, next.lpSupply],
-        );
+        const nextReserve1 = next.reserve1 && /^\d+$/.test(next.reserve1) ? BigInt(next.reserve1) : null;
+        const nextReserve2 = next.reserve2 && /^\d+$/.test(next.reserve2) ? BigInt(next.reserve2) : null;
+        return depositStillExecutable(deposit.amount1, deposit.amount2, min1, min2, nextReserve1, nextReserve2);
       },
     );
     if (!result) return;
@@ -368,10 +386,14 @@ export function RunScreen() {
         setNotice(review.message);
         return;
       }
-      const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
-      const again = /^0x[0-9a-fA-F]{64}$/.test(againHash) ? await quoteExactIn(api, pay, receive, amount, againHash) : null;
-      if (!sameFacts([fresh], [again])) {
-        setNotice("The quote changed after the fee check. Nothing was submitted.");
+      const quoteStillCovers = async () => {
+        const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
+        if (!/^0x[0-9a-fA-F]{64}$/.test(againHash)) return false;
+        const again = await quoteExactIn(api, pay, receive, amount, againHash);
+        return again !== null && /^\d+$/.test(again) && swapStillExecutable(BigInt(again), minimum);
+      };
+      if (!(await quoteStillCovers())) {
+        setNotice("The quote no longer covers your minimum. Nothing was submitted.");
         return;
       }
       txs.push({ id, label: `Swap ${NATIVE_SYMBOL}`, status: "signing" });
@@ -384,6 +406,8 @@ export function RunScreen() {
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),
+        undefined,
+        quoteStillCovers,
       );
       record("swap", `Swap ${NATIVE_SYMBOL}`, result);
       if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
