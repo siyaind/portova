@@ -85,17 +85,44 @@ export function outcomeAfterWait(input: {
   };
 }
 
-export function extrinsicDispatch(
-  events: { event: { section: string; method: string } }[] | undefined,
-): "success" | "failed" | "unknown" {
-  if (!events || events.length === 0) return "unknown";
+type Phase = {
+  isApplyExtrinsic?: boolean;
+  asApplyExtrinsic?: { toNumber?: () => number } | number;
+  ApplyExtrinsic?: number;
+};
+
+export type DispatchEvent = {
+  phase?: Phase;
+  event: { section: string; method: string };
+};
+
+function applyExtrinsicIndex(phase: Phase | undefined): number | null {
+  if (!phase?.isApplyExtrinsic) {
+    return typeof phase?.ApplyExtrinsic === "number" ? phase.ApplyExtrinsic : null;
+  }
+  const value = phase.asApplyExtrinsic;
+  if (typeof value === "number") return value;
+  const number = value?.toNumber?.();
+  return typeof number === "number" ? number : null;
+}
+
+export function dispatchOutcome(events: DispatchEvent[], index: number): "success" | "failed" | "unknown" {
   let success = false;
   for (const record of events) {
+    if (applyExtrinsicIndex(record.phase) !== index) continue;
     if (record.event.section !== "system") continue;
     if (record.event.method === "ExtrinsicFailed") return "failed";
     if (record.event.method === "ExtrinsicSuccess") success = true;
   }
   return success ? "success" : "unknown";
+}
+
+export function extrinsicDispatch(
+  events: DispatchEvent[] | undefined,
+  index: number | undefined,
+): "success" | "failed" | "unknown" {
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) return "unknown";
+  return dispatchOutcome(events ?? [], index);
 }
 
 export function signingLabel(phase: TxStatus | null, idle: string): string {

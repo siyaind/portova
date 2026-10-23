@@ -1,36 +1,7 @@
 import type { ApiPromise } from "@polkadot/api";
-import type { ChainMatch } from "@/lib/tx-result";
+import { dispatchOutcome, type ChainMatch, type DispatchEvent } from "./tx-result.ts";
 
-type Phase = {
-  isApplyExtrinsic?: boolean;
-  asApplyExtrinsic?: { toNumber?: () => number } | number;
-  ApplyExtrinsic?: number;
-};
-
-type EventRecord = {
-  phase: Phase;
-  event: { section: string; method: string };
-};
-
-export function dispatchOutcome(events: EventRecord[], index: number): "success" | "failed" | "unknown" {
-  for (const record of events) {
-    if (applyExtrinsicIndex(record.phase) !== index) continue;
-    if (record.event.section !== "system") continue;
-    if (record.event.method === "ExtrinsicFailed") return "failed";
-    if (record.event.method === "ExtrinsicSuccess") return "success";
-  }
-  return "unknown";
-}
-
-function applyExtrinsicIndex(phase: Phase): number | null {
-  if (phase.isApplyExtrinsic) {
-    const value = phase.asApplyExtrinsic;
-    if (typeof value === "number") return value;
-    const number = value?.toNumber?.();
-    return typeof number === "number" ? number : null;
-  }
-  return typeof phase.ApplyExtrinsic === "number" ? phase.ApplyExtrinsic : null;
-}
+export { dispatchOutcome };
 
 export async function reconcileExtrinsic(
   api: ApiPromise,
@@ -60,7 +31,7 @@ export async function reconcileExtrinsic(
 
 async function readDispatch(api: ApiPromise, blockHash: { toHex(): string }, index: number): Promise<"success" | "failed" | "unknown"> {
   try {
-    const events = (await api.query.system.events.at(blockHash as never)) as unknown as EventRecord[];
+    const events = (await api.query.system.events.at(blockHash as never)) as unknown as DispatchEvent[];
     return dispatchOutcome(events, index);
   } catch {
     return "unknown";

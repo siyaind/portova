@@ -1,4 +1,5 @@
 import type { ApiPromise } from "@polkadot/api";
+import { keptAliveSpendable } from "@/lib/balance";
 import { errorText } from "@/lib/format";
 
 export type AssetRow = {
@@ -159,6 +160,17 @@ export async function readAssets(api: ApiPromise): Promise<AssetRow[]> {
   return rows.sort((a, b) => Number(a.id) - Number(b.id));
 }
 
+export async function readAssetMinBalance(api: ApiPromise, id: string): Promise<bigint | null> {
+  const stored = await api.query.assets.asset(id);
+  const optional = stored as unknown as {
+    isNone?: boolean;
+    unwrap?: () => { minBalance?: { toString(): string } };
+  };
+  if (optional.isNone || !optional.unwrap) return null;
+  const text = optional.unwrap().minBalance?.toString().replace(/,/g, "") ?? "";
+  return /^\d+$/.test(text) ? BigInt(text) : null;
+}
+
 export async function countEntries(
   api: ApiPromise,
   pallet: string,
@@ -185,20 +197,19 @@ export async function readAccount(
   const account = (await api.query.system.account(address)) as unknown as {
     data: {
       free: { toString(): string };
+      reserved?: { toString(): string };
       frozen?: { toString(): string };
       miscFrozen?: { toString(): string };
       feeFrozen?: { toString(): string };
     };
   };
   const free = digits(account.data.free);
+  const reserved = digits(account.data.reserved);
   const frozen = largestFrozen(account.data);
-  const spendable = !free
-    ? null
-    : frozen === null
-      ? free
-      : BigInt(free) > frozen
-        ? (BigInt(free) - frozen).toString()
-        : "0";
+  const existentialDeposit = digits(
+    (api.consts.balances as { existentialDeposit?: { toString(): string } }).existentialDeposit,
+  );
+  const spendable = keptAliveSpendable({ free, reserved, frozen, existentialDeposit });
   const holdings: HoldingRow[] = [];
 
   for (const asset of assets) {

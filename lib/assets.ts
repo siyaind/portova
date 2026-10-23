@@ -33,6 +33,11 @@ export type TxUpdate = {
 };
 
 type ChainEvent = {
+  phase?: {
+    isApplyExtrinsic?: boolean;
+    asApplyExtrinsic?: { toNumber?: () => number } | number;
+    ApplyExtrinsic?: number;
+  };
   event: {
     section: string;
     method: string;
@@ -116,6 +121,7 @@ export async function signAndSend(
       options: { signer: Signer },
       callback: (result: {
         txHash: { toHex(): string };
+        txIndex?: number;
         dispatchError?: { isModule?: boolean; asModule?: unknown; toString(): string };
         status: {
           isInBlock: boolean;
@@ -190,7 +196,7 @@ export async function signAndSend(
         return;
       }
       if (result.status.isFinalized) {
-        const verdict = extrinsicDispatch(result.events);
+        const verdict = extrinsicDispatch(result.events, result.txIndex);
         if (verdict === "failed") {
           finish({
             status: "failed",

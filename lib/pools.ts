@@ -128,18 +128,7 @@ export async function readPools(api: ApiPromise): Promise<PoolView[]> {
     } catch {
       lpDecimals = null;
     }
-    let lpSupply: string | null = null;
-    try {
-      const assetInfo = (await api.query.poolAssets.asset(lpToken)) as unknown as {
-        isNone?: boolean;
-        unwrap?: () => { supply?: { toString(): string } };
-      };
-      if (!assetInfo.isNone && assetInfo.unwrap) {
-        lpSupply = assetInfo.unwrap().supply?.toString() ?? null;
-      }
-    } catch {
-      lpSupply = null;
-    }
+    const lpSupply = await readLpSupply(api, lpToken);
     pools.push({ asset1, asset2, lpToken, reserve1, reserve2, lpDecimals, lpSupply });
   }
   return pools;
@@ -160,6 +149,35 @@ export async function quoteExactIn(
   if (quoted.isNone || !quoted.unwrap) return null;
   const amount = quoted.unwrap().toString();
   return /^\d+$/.test(amount) ? amount : null;
+}
+
+export async function readLpSupply(api: ApiPromise, lpToken: string): Promise<string | null> {
+  try {
+    const assetInfo = (await api.query.poolAssets.asset(lpToken)) as unknown as {
+      isNone?: boolean;
+      unwrap?: () => { supply?: { toString(): string } };
+    };
+    if (assetInfo.isNone || !assetInfo.unwrap) return null;
+    const supply = assetInfo.unwrap().supply?.toString().replace(/,/g, "") ?? "";
+    return /^\d+$/.test(supply) ? supply : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function missingLpAccountDeposit(
+  api: ApiPromise,
+  lpToken: string,
+  address: string,
+): Promise<bigint | null> {
+  const consts = api.consts.poolAssets as unknown as {
+    assetAccountDeposit?: { toString?: () => string };
+  };
+  const depositText = consts.assetAccountDeposit?.toString?.()?.replace(/,/g, "") ?? "";
+  if (!/^\d+$/.test(depositText)) return null;
+  const stored = (await api.query.poolAssets.account(lpToken, address)) as unknown as { isNone?: boolean };
+  if (typeof stored.isNone !== "boolean") return null;
+  return stored.isNone ? BigInt(depositText) : BigInt(0);
 }
 
 export async function readLpBalance(

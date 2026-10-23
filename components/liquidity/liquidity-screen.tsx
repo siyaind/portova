@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChain } from "@/components/chain/chain-provider";
+import { readAssetMinBalance } from "@/lib/chain-read";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
-import { optimalDeposit, pairedAmount } from "@/lib/liquidity-math";
+import { assetRemainder, callNativeCost, optimalDeposit, pairedAmount, removalMinimum } from "@/lib/liquidity-math";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
@@ -18,7 +19,9 @@ import {
   buildCreatePool,
   buildRemoveLiquidity,
   poolLabel,
+  missingLpAccountDeposit,
   readLpBalance,
+  readLpSupply,
   readPoolConstants,
   readReserves,
   reservesUsable,
@@ -294,24 +297,11 @@ export function LiquidityScreen() {
       return;
     }
     const snapshot = await chain.readAccount(signer.address);
-    const spendable = snapshot.spendable?.replace(/,/g, "") ?? "";
-    if (snapshot.error || !/^\d+$/.test(spendable)) {
+    const spendableText = snapshot.spendable?.replace(/,/g, "") ?? "";
+    if (snapshot.error || !/^\d+$/.test(spendableText)) {
       setAddMessage(snapshot.error ?? "The spendable balance could not be read, so the wallet was not opened.");
       return;
     }
-    const have1 = assetBalance(pool.asset1, BigInt(spendable), snapshot.holdings);
-    const have2 = assetBalance(pool.asset2, BigInt(spendable), snapshot.holdings);
-    const name1 = assetLabel(pool.asset1, maps.symbols);
-    const name2 = assetLabel(pool.asset2, maps.symbols);
-    const short = [desired1 > have1 ? name1 : null, desired2 > have2 ? name2 : null].filter((name): name is string => Boolean(name));
-    if (short.length > 0) {
-      const verb = short.length > 1 ? "are short" : "is short";
-      setAddMessage(
-        `${short.join(" and ")} ${verb}. This deposit asks for ${shownAmount(desired1, decimals1, name1)} and ${shownAmount(desired2, decimals2, name2)}. This account has ${shownAmount(have1, decimals1, name1)} and ${shownAmount(have2, decimals2, name2)}. The wallet was not opened.`,
-      );
-      return;
-    }
-    setAddMessage(null);
     const api = chain.getApi();
     if (!api) {
       setAddMessage("The testnet connection is unavailable, so the wallet was not opened.");
@@ -334,6 +324,82 @@ export function LiquidityScreen() {
       setAddMessage("The reserve ratio does not produce a deposit above zero, so nothing was signed.");
       return;
     }
+    const nativeIn = pool.asset1.kind === "native" ? deposit.amount1 : pool.asset2.kind === "native" ? deposit.amount2 : BigInt(0);
+    let fee: bigint | null = null;
+    let lpDeposit: bigint | null = null;
+    try {
+      const info = await buildAddLiquidity(
+        api,
+        pool,
+        deposit.amount1,
+        deposit.amount2,
+        min1,
+        min2,
+        signer.address,
+      ).paymentInfo(signer.address);
+      const feeText = info.partialFee.toString().replace(/,/g, "");
+      fee = /^\d+$/.test(feeText) ? BigInt(feeText) : null;
+      lpDeposit = await missingLpAccountDeposit(api, pool.lpToken, signer.address);
+    } catch (cause) {
+      setAddMessage(errorText(cause));
+      return;
+    }
+    const cost = callNativeCost([nativeIn, fee, lpDeposit]);
+    if (cost === null || fee === null || lpDeposit === null) {
+      setAddMessage("The fee or the pool-asset account deposit could not be read, so the wallet was not opened.");
+      return;
+    }
+    const spendable = BigInt(spendableText);
+    if (cost > spendable) {
+      setAddMessage(
+        `This account can spend ${formatUnits(spendableText, NATIVE_DECIMALS)} ${NATIVE_SYMBOL} after frozen funds and the existential deposit. This deposit needs ${formatUnits(cost.toString(), NATIVE_DECIMALS)} ${NATIVE_SYMBOL} for the native amount, the fee, and any new pool-asset account. The wallet was not opened.`,
+      );
+      return;
+    }
+    const assetSides: Array<{ id: string; amount: bigint; decimals: number; name: string }> = [];
+    if (pool.asset1.kind === "asset") {
+      assetSides.push({
+        id: pool.asset1.id,
+        amount: deposit.amount1,
+        decimals: decimals1,
+        name: assetLabel(pool.asset1, maps.symbols),
+      });
+    }
+    if (pool.asset2.kind === "asset") {
+      assetSides.push({
+        id: pool.asset2.id,
+        amount: deposit.amount2,
+        decimals: decimals2,
+        name: assetLabel(pool.asset2, maps.symbols),
+      });
+    }
+    for (const side of assetSides) {
+      const name = side.name;
+      const have = assetBalance({ kind: "asset", id: side.id }, spendable, snapshot.holdings);
+      let minBalance: bigint | null = null;
+      try {
+        minBalance = await readAssetMinBalance(api, side.id);
+      } catch (cause) {
+        setAddMessage(errorText(cause));
+        return;
+      }
+      if (minBalance === null) {
+        setAddMessage(`The minimum balance for ${name} could not be read, so the wallet was not opened.`);
+        return;
+      }
+      const remainder = assetRemainder(have, side.amount, minBalance);
+      if (remainder === "short") {
+        setAddMessage(
+          `${name} is short. This deposit needs ${shownAmount(side.amount, side.decimals, name)} and this account has ${shownAmount(have, side.decimals, name)}. The wallet was not opened.`,
+        );
+        return;
+      }
+      if (remainder === "dust") {
+        setAddMessage(`This deposit would leave ${name} below its minimum balance. The wallet was not opened.`);
+        return;
+      }
+    }
+    setAddMessage(null);
     await sign(
       "Add liquidity",
       (api) => buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address),
@@ -358,14 +424,18 @@ export function LiquidityScreen() {
     }
     let fresh1: string | null = null;
     let fresh2: string | null = null;
+    let lpSupply: string | null = null;
     try {
-      [fresh1, fresh2] = await readReserves(api, pool.asset1, pool.asset2);
+      [[fresh1, fresh2], lpSupply] = await Promise.all([
+        readReserves(api, pool.asset1, pool.asset2),
+        readLpSupply(api, pool.lpToken),
+      ]);
     } catch (cause) {
       setMessage(errorText(cause));
       return;
     }
-    const min1 = withdrawalMin(fresh1, pool.lpSupply, raw, slippage);
-    const min2 = withdrawalMin(fresh2, pool.lpSupply, raw, slippage);
+    const min1 = removalMinimum(fresh1, lpSupply, raw, slippage);
+    const min2 = removalMinimum(fresh2, lpSupply, raw, slippage);
     if (min1 === null || min2 === null) {
       setMessage("Reserves or LP supply are unavailable, so a minimum receive amount was not invented.");
       return;
@@ -402,21 +472,6 @@ export function LiquidityScreen() {
     setAmount1(paired.first);
     setAmount2(paired.second);
   }
-}
-
-function withdrawalMin(
-  reserve: string | null,
-  supply: string | null,
-  burn: bigint,
-  slippage: string,
-): bigint | null {
-  const reserveRaw = reserve?.replace(/,/g, "") ?? "";
-  const supplyRawText = supply?.replace(/,/g, "") ?? "";
-  if (!/^\d+$/.test(reserveRaw) || !/^\d+$/.test(supplyRawText)) return null;
-  const supplyRaw = BigInt(supplyRawText);
-  if (supplyRaw <= BigInt(0)) return null;
-  const expected = (BigInt(reserveRaw) * burn) / supplyRaw;
-  return applySlippage(expected, slippage);
 }
 
 function rawLpUnits(decimals: number | null): boolean {

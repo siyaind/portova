@@ -10,11 +10,20 @@ test("only finalization is described as final", () => {
   assert.match(txResultMessage("ambiguous"), /not proof the transaction failed/);
 });
 
-test("finalized success requires system.ExtrinsicSuccess", () => {
-  assert.equal(extrinsicDispatch([{ event: { section: "system", method: "ExtrinsicSuccess" } }]), "success");
-  assert.equal(extrinsicDispatch([{ event: { section: "system", method: "ExtrinsicFailed" } }]), "failed");
-  assert.equal(extrinsicDispatch([{ event: { section: "assets", method: "Created" } }]), "unknown");
-  assert.equal(extrinsicDispatch(undefined), "unknown");
+test("finalized success requires the matching extrinsic index", () => {
+  const success = {
+    phase: { isApplyExtrinsic: true, asApplyExtrinsic: 0 },
+    event: { section: "system", method: "ExtrinsicSuccess" },
+  };
+  const failed = {
+    phase: { isApplyExtrinsic: true, asApplyExtrinsic: 0 },
+    event: { section: "system", method: "ExtrinsicFailed" },
+  };
+  assert.equal(extrinsicDispatch([success], 0), "success");
+  assert.equal(extrinsicDispatch([success], 1), "unknown");
+  assert.equal(extrinsicDispatch([success], undefined), "unknown");
+  assert.equal(extrinsicDispatch([success, failed], 0), "failed");
+  assert.equal(extrinsicDispatch([{ event: { section: "assets", method: "Created" } }], 0), "unknown");
 });
 
 test("a wallet cancel or a rejected fee with no hash stays unknown", () => {
