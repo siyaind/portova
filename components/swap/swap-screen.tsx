@@ -51,6 +51,7 @@ export function SwapScreen() {
   const [quoteState, setQuoteState] = useState<"idle" | "reading" | "none" | "ready" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [quotedAt, setQuotedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -101,6 +102,28 @@ export function SwapScreen() {
   }, [amountIn, assetIn, assetOut, chain.getApi, pool, quoteKey, usable]);
 
   const minimum = liveQuote && /^\d+$/.test(liveQuote) ? applySlippage(BigInt(liveQuote), slippage) : null;
+  const quoteSecondsLeft = quotedAt === null ? null : Math.max(0, Math.ceil((QUOTE_EXPIRY_MS - (now - quotedAt)) / 1000));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (quotedAt === null) return;
+    const delay = quotedAt + QUOTE_EXPIRY_MS - Date.now();
+    const clear = () => {
+      setQuote(null);
+      setQuotedAt(null);
+      setQuoteState("idle");
+    };
+    if (delay <= 0) {
+      clear();
+      return;
+    }
+    const timer = window.setTimeout(clear, delay);
+    return () => window.clearTimeout(timer);
+  }, [quotedAt]);
 
   async function onSwap() {
     setMessage(null);
@@ -161,7 +184,9 @@ export function SwapScreen() {
         setMessage(review.message);
         return;
       }
+      const quoteStartedAt = quotedAt;
       const quoteStillCovers = async () => {
+        if (quoteStartedAt === null || quoteExpired(quoteStartedAt, Date.now())) return false;
         const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
         if (!/^0x[0-9a-fA-F]{64}$/.test(againHash)) return false;
         const again = await quoteExactIn(api, assetIn, assetOut, amountIn, againHash);
@@ -272,6 +297,13 @@ export function SwapScreen() {
               >
                 {busy ? "Waiting for the wallet…" : signer ? "Swap" : "Connect Substrate wallet"}
               </button>
+              <p className="text-xs leading-5 text-faint">
+                {quoteSecondsLeft === null
+                  ? "A quote lasts 30 seconds. Approval after that is rejected, even if the minimum would still pass."
+                  : quoteSecondsLeft === 0
+                    ? "This quote has expired. Wait for the next one."
+                    : `Quote expires in ${quoteSecondsLeft}s. Approval after that is rejected, even if the minimum would still pass.`}
+              </p>
               <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
               {!signer && usable ? (
                 <p className="text-xs text-faint">The button stays off until a quote exists. Connecting does not submit the swap.</p>

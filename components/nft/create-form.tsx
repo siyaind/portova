@@ -12,6 +12,7 @@ import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/
 import {
   buildCollectionCreateTx,
   buildCollectionFinishTx,
+  readCollectionProfile,
   byteDeposit,
   createdCollectionUpdate,
   collectionMintSteps,
@@ -21,8 +22,11 @@ import {
   type NftConstants,
 } from "@/lib/nfts";
 import { planck } from "@/lib/balance";
+import { feeHeadroom } from "@/lib/fee-evidence";
+import { parsePendingLaunch, pendingStorageKey, type PendingCollectionLaunch } from "@/lib/pending-collection";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { reviewExtrinsic } from "@/lib/preflight";
+import { collectionIdForHash } from "@/lib/tx-reconcile";
 import { isProceedsAddress } from "@/lib/project";
 
 const FIELD =
@@ -39,6 +43,7 @@ export function CreateCollectionForm() {
   const [constantsError, setConstantsError] = useState<string | null>(null);
   const [predicted, setPredicted] = useState<number | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [launch, setLaunch] = useState<PendingCollectionLaunch | null>(null);
   const [collectionUri, setCollectionUri] = useState("");
   const [itemUri, setItemUri] = useState("");
   const [maxSupply, setMaxSupply] = useState("");
@@ -55,7 +60,7 @@ export function CreateCollectionForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
   const previousSigner = useRef<string | null>(null);
-  const pendingKey = "portova.pending-collection.v1";
+  const launchKey = signer ? pendingStorageKey(chain.getApi()?.genesisHash.toHex() ?? "", signer.address) : null;
 
   useEffect(() => {
     if (!signer) return;
@@ -75,8 +80,6 @@ export function CreateCollectionForm() {
     setConstants(next);
     setConstantsError(null);
     let cancelled = false;
-    const stored = window.sessionStorage.getItem(pendingKey);
-    if (stored && /^\d+$/.test(stored)) setCreatedId(stored);
     void predictCollectionId(api).then((id) => {
       if (!cancelled) setPredicted(id);
     });
@@ -84,6 +87,52 @@ export function CreateCollectionForm() {
       cancelled = true;
     };
   }, [chain, chain.status, chain.blockNumber]);
+
+  useEffect(() => {
+    const api = chain.getApi();
+    if (!signer || !api || chain.status !== "live" || !launchKey) return;
+    const parsed = parsePendingLaunch(window.sessionStorage.getItem(launchKey));
+    if (!parsed || parsed.genesisHash !== api.genesisHash.toHex() || parsed.payer !== signer.address) {
+      setLaunch(null);
+      setCreatedId(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      let next = parsed;
+      if (!next.collectionId && next.createHash) {
+        const recovered = await collectionIdForHash(api, next.createHash).catch(() => null);
+        if (recovered) next = { ...next, collectionId: recovered };
+      }
+      if (cancelled) return;
+      if (next.collectionId) {
+        const profile = await readCollectionProfile(api, next.collectionId).catch(() => null);
+        if (cancelled) return;
+        if (!profile?.found || profile.owner !== signer.address) {
+          window.sessionStorage.removeItem(launchKey);
+          setLaunch(null);
+          setCreatedId(null);
+          setFormError("The saved collection is not owned by this wallet, so it was not resumed.");
+          return;
+        }
+      }
+      window.sessionStorage.setItem(launchKey, JSON.stringify(next));
+      setLaunch(next);
+      setCreatedId(next.collectionId);
+      setCollectionUri(next.settings.collectionMetadata);
+      setItemUri(next.settings.itemMetadata ?? "");
+      setItemId(String(next.settings.itemId));
+      setMaxSupply(next.settings.maxSupply === null ? "" : String(next.settings.maxSupply));
+      setPublicMint(next.settings.publicMint);
+      setPrice(next.settings.price ?? "");
+      setTransferable(next.settings.transferable);
+      setEditableMetadata(next.settings.metadataEditable);
+      setMintTo(next.settings.mintTo);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chain.status, launchKey, signer]);
 
   const limit = constants?.stringLimit ?? 256;
   const collectionBytes = byteLength(collectionUri.trim());
@@ -224,21 +273,80 @@ export function CreateCollectionForm() {
     setSubmitPhase("signing");
     let tracked: string | null = null;
     try {
-      const finishing = createdId !== null;
-      const tx = finishing ? buildCollectionFinishTx(api, signed) : buildCollectionCreateTx(api, signed);
-      const review = await reviewExtrinsic(api, tx, signer.address, finishing
-        ? [
-            planck(constants.itemDeposit),
-            byteDeposit(constants, signed.collectionMetadata),
-            signed.itemMetadata ? byteDeposit(constants, signed.itemMetadata) : 0n,
-            signed.price ?? 0n,
-          ]
-        : [planck(constants.collectionDeposit)]);
+      const finishing = createdId !== null && launch !== null;
+      const launchSettings = finishing ? launch.settings : {
+        collectionMetadata: signed.collectionMetadata,
+        itemMetadata: signed.itemMetadata,
+        itemId: signed.itemId,
+        maxSupply: signed.maxSupply,
+        publicMint: signed.publicMint,
+        price: price.trim() || null,
+        transferable: signed.transferable,
+        metadataEditable: signed.metadataEditable,
+        mintTo: signed.mintTo,
+      };
+      const launchParams = {
+        ...signed,
+        collectionId: finishing ? Number(createdId) : 0,
+        collectionMetadata: launchSettings.collectionMetadata,
+        itemMetadata: launchSettings.itemMetadata,
+        itemId: launchSettings.itemId,
+        maxSupply: launchSettings.maxSupply,
+        publicMint: launchSettings.publicMint,
+        price: launchSettings.publicMint && launchSettings.price ? parseDecimalToPlanck(launchSettings.price, NATIVE_DECIMALS) : null,
+        transferable: launchSettings.transferable,
+        metadataEditable: launchSettings.metadataEditable,
+        mintTo: launchSettings.mintTo,
+      };
+      const createDebits = [planck(constants.collectionDeposit)];
+      const finishDebits = [
+        planck(constants.itemDeposit),
+        byteDeposit(constants, launchParams.collectionMetadata),
+        launchParams.itemMetadata ? byteDeposit(constants, launchParams.itemMetadata) : 0n,
+        launchParams.price ?? 0n,
+      ];
+      const tx = finishing ? buildCollectionFinishTx(api, launchParams) : buildCollectionCreateTx(api, launchParams);
+      if (!finishing) {
+        const finishQuote = buildCollectionFinishTx(api, launchParams);
+        const createReview = await reviewExtrinsic(api, tx, signer.address, createDebits);
+        const finishReview = await reviewExtrinsic(api, finishQuote, signer.address, finishDebits);
+        if (!createReview.ok) {
+          setFormError(createReview.message);
+          setSubmitPhase(null);
+          return;
+        }
+        if (!finishReview.ok) {
+          setFormError(`The metadata and mint signature was checked before the create. ${finishReview.message}`);
+          setSubmitPhase(null);
+          return;
+        }
+        const room = feeHeadroom(createReview.spendable, createReview.nativeNeed + finishReview.nativeNeed);
+        if (room !== "ok") {
+          setFormError("The two signatures together leave less than the observed fee gap. The first signature was not opened.");
+          setSubmitPhase(null);
+          return;
+        }
+      }
+      const review = await reviewExtrinsic(api, tx, signer.address, finishing ? finishDebits : createDebits);
       if (!review.ok) {
         setFormError(review.message);
         setSubmitPhase(null);
         return;
       }
+      const genesis = api.genesisHash.toHex();
+      const storageKey = pendingStorageKey(genesis, signer.address);
+      const remember = (collectionId: string | null, createHash: string | null) => {
+        const next: PendingCollectionLaunch = {
+          genesisHash: genesis,
+          payer: signer.address,
+          collectionId,
+          createHash,
+          settings: launchSettings,
+        };
+        window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+        setLaunch(next);
+        setCreatedId(collectionId);
+      };
       const id = crypto.randomUUID();
       tracked = id;
       txs.push({ id, label: finishing ? `Finish collection ${signed.collectionId}` : "Create collection", status: "signing" });
@@ -253,6 +361,7 @@ export function CreateCollectionForm() {
         (update) => {
           setSubmitPhase(update.status);
           txs.patch(id, update);
+          if (!finishing && update.hash) remember(update.collectionId ?? null, update.hash);
         },
         createdCollectionUpdate,
       );
@@ -264,20 +373,22 @@ export function CreateCollectionForm() {
         await chain.refreshCollections().catch(() => undefined);
       }
       if (!finishing) {
-        if (result.status !== "finalized" || !result.collectionId) {
+        const recovered = result.collectionId ?? (result.hash ? await collectionIdForHash(api, result.hash) : null);
+        if ((result.status !== "finalized" && result.status !== "included") || !recovered) {
+          if (result.hash) remember(null, result.hash);
           setFormError(result.status === "finalized"
-            ? "The create was finalized, but the Created event did not include an id. The app will not guess one."
+            ? "The create was finalized, but its nfts.Created id was not found. The app will not guess one or start another collection."
             : txResultMessage(result.status, result.error));
           return;
         }
-        window.sessionStorage.setItem(pendingKey, result.collectionId);
-        setCreatedId(result.collectionId);
-        setFormError(`Collection ${result.collectionId} is on chain. Sign once more to add metadata and mint the first item.`);
+        remember(recovered, result.hash ?? null);
+        setFormError(`Collection ${recovered} is on chain for this wallet. Sign once more to add the saved metadata and mint.`);
         return;
       }
       if (result.status === "finalized") {
-        window.sessionStorage.removeItem(pendingKey);
-        router.push(`/collection/${signed.collectionId}?item=${signed.itemId}`);
+        window.sessionStorage.removeItem(storageKey);
+        setLaunch(null);
+        router.push(`/collection/${launchParams.collectionId}?item=${launchParams.itemId}`);
         return;
       }
       setFormError(txResultMessage(result.status, result.error));
@@ -303,6 +414,7 @@ export function CreateCollectionForm() {
         className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"
       >
         <Panel className="space-y-4 p-4">
+          <fieldset disabled={Boolean(createdId)} className="min-w-0 space-y-4 border-0 p-0">
           <Field label="Collection metadata URI" hint={`${collectionBytes}/${limit} bytes`}>
             <input
               className={FIELD}
@@ -372,6 +484,21 @@ export function CreateCollectionForm() {
               ? `Collection ${createdId} is already on chain. The next signature writes metadata and mints item ${itemId} on that id.`
               : "The first signature only creates the collection. The chain assigns the id. Metadata and the first mint are a second signature after that id is known."}
           </p>
+          </fieldset>
+          {createdId ? (
+            <button
+              type="button"
+              className="text-xs text-muted underline"
+              onClick={() => {
+                if (launchKey) window.sessionStorage.removeItem(launchKey);
+                setLaunch(null);
+                setCreatedId(null);
+                setFormError("The unfinished launch was cleared in this browser. The collection on chain was not removed.");
+              }}
+            >
+              Leave this collection unfinished
+            </button>
+          ) : null}
           {attempted && problems.length > 0 ? (
             <ul className="space-y-1 text-sm text-warn">
               {problems.map((problem) => (

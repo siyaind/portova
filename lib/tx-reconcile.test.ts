@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApiPromise } from "@polkadot/api";
-import { dispatchOutcome, reconcileExtrinsic } from "./tx-reconcile.ts";
+import { collectionIdForHash, dispatchOutcome, reconcileExtrinsic } from "./tx-reconcile.ts";
 
 const HASH = `0x${"ab".repeat(32)}`;
 
@@ -53,6 +53,19 @@ function apiFor(head: ReturnType<typeof block>, events: ReturnType<typeof succes
     },
   } as unknown as ApiPromise;
 }
+
+test("a finalized create recovers the nfts.Created id for that extrinsic", async () => {
+  const created = {
+    phase: { isApplyExtrinsic: true, asApplyExtrinsic: { toNumber: () => 0 } },
+    event: { section: "nfts", method: "Created", data: [{ toString: () => "9" }] },
+  };
+  const other = {
+    phase: { isApplyExtrinsic: true, asApplyExtrinsic: { toNumber: () => 1 } },
+    event: { section: "nfts", method: "Created", data: [{ toString: () => "4" }] },
+  };
+  const api = apiFor(block(10, "0xparent", [HASH]), [successEvent(0), created, other]);
+  assert.equal(await collectionIdForHash(api, HASH), "9");
+});
 
 test("ExtrinsicSuccess in a finalized block is finalized", async () => {
   const found = await reconcileExtrinsic(apiFor(block(10, "0xparent", [HASH]), [successEvent(0)]), HASH);

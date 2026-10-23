@@ -93,7 +93,7 @@ type Phase = {
 
 export type DispatchEvent = {
   phase?: Phase;
-  event: { section: string; method: string };
+  event: { section: string; method: string; data?: Array<{ toString(): string }> };
 };
 
 function applyExtrinsicIndex(phase: Phase | undefined): number | null {
