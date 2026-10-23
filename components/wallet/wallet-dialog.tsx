@@ -50,7 +50,7 @@ export function WalletDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-line bg-panel"
+        className="wallet-dialog-surface relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panel"
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>

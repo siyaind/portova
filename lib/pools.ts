@@ -76,7 +76,7 @@ export function readPoolConstants(api: ApiPromise): PoolConstants | null {
   };
 }
 
-async function readReserves(
+export async function readReserves(
   api: ApiPromise,
   asset1: AssetRef,
   asset2: AssetRef,

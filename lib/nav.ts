@@ -22,7 +22,7 @@ export type NavItem = {
 };
 
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/explore", label: "Explore", icon: Compass },
   { href: "/token-launchpad", label: "Token Launchpad", icon: Coins },
   { href: "/nft-launchpad", label: "NFT Launchpad", icon: Images },

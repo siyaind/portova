@@ -10,6 +10,7 @@ import { buildAssetMint, signAndSend } from "@/lib/assets";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { isProceedsAddress } from "@/lib/project";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 
 export function TokenProfile({ id }: { id: string }) {
@@ -172,6 +173,10 @@ function MintMore({ profile }: { profile: AssetProfile }) {
       return;
     }
     const destination = to.trim() || signer.address;
+    if (!isProceedsAddress(destination)) {
+      setMessage("The destination is not a testnet address, so the wallet was not opened.");
+      return;
+    }
     setBusy(true);
     const id = crypto.randomUUID();
     txs.push({ id, label: `Mint asset ${profile.id}`, status: "signing" });

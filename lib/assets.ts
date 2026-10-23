@@ -2,7 +2,7 @@ import type { ApiPromise } from "@polkadot/api";
 import type { Signer } from "@polkadot/types/types";
 import { plainChainError } from "@/lib/chain-error";
 import { reconcileExtrinsic } from "@/lib/tx-reconcile";
-import { outcomeAfterWait } from "@/lib/tx-result";
+import { extrinsicDispatch, outcomeAfterWait } from "@/lib/tx-result";
 
 export type AssetConstants = {
   assetDeposit: string;
@@ -190,6 +190,27 @@ export async function signAndSend(
         return;
       }
       if (result.status.isFinalized) {
+        const verdict = extrinsicDispatch(result.events);
+        if (verdict === "failed") {
+          finish({
+            status: "failed",
+            hash,
+            error: result.dispatchError
+              ? decodeDispatchError(api, result.dispatchError)
+              : "system.ExtrinsicFailed was in the finalized block.",
+            ...extra(),
+          });
+          return;
+        }
+        if (verdict !== "success") {
+          finish({
+            status: "ambiguous",
+            hash,
+            error: "The block was finalized, but system.ExtrinsicSuccess was not found for this extrinsic. It is not marked successful.",
+            ...extra(),
+          });
+          return;
+        }
         finish({ status: "finalized", hash, ...extra() });
         return;
       }

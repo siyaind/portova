@@ -1,4 +1,5 @@
 import type { ApiPromise } from "@polkadot/api";
+import { errorText } from "@/lib/format";
 
 export type AssetRow = {
   id: string;
@@ -17,9 +18,28 @@ export type HoldingRow = {
 
 export type AccountSnapshot = {
   free: string | null;
+  spendable: string | null;
   holdings: HoldingRow[];
   error: string | null;
 };
+
+function digits(value: { toString(): string } | undefined): string | null {
+  const text = value?.toString().replace(/,/g, "") ?? "";
+  return /^\d+$/.test(text) ? text : null;
+}
+
+function largestFrozen(data: {
+  frozen?: { toString(): string };
+  miscFrozen?: { toString(): string };
+  feeFrozen?: { toString(): string };
+}): bigint | null {
+  const values = [data.frozen, data.miscFrozen, data.feeFrozen]
+    .map((item) => digits(item))
+    .filter((item): item is string => Boolean(item))
+    .map((item) => BigInt(item));
+  if (values.length === 0) return null;
+  return values.reduce((max, value) => (value > max ? value : max), BigInt(0));
+}
 
 function textOf(value: { toUtf8?: () => string } | undefined): string {
   try {
@@ -161,10 +181,24 @@ export async function readAccount(
   address: string,
   assets: AssetRow[],
 ): Promise<AccountSnapshot> {
+  try {
   const account = (await api.query.system.account(address)) as unknown as {
-    data: { free: { toString(): string } };
+    data: {
+      free: { toString(): string };
+      frozen?: { toString(): string };
+      miscFrozen?: { toString(): string };
+      feeFrozen?: { toString(): string };
+    };
   };
-  const free = account.data.free.toString();
+  const free = digits(account.data.free);
+  const frozen = largestFrozen(account.data);
+  const spendable = !free
+    ? null
+    : frozen === null
+      ? free
+      : BigInt(free) > frozen
+        ? (BigInt(free) - frozen).toString()
+        : "0";
   const holdings: HoldingRow[] = [];
 
   for (const asset of assets) {
@@ -184,5 +218,8 @@ export async function readAccount(
     });
   }
 
-  return { free, holdings, error: null };
+  return { free, spendable, holdings, error: null };
+  } catch (cause) {
+    return { free: null, spendable: null, holdings: [], error: errorText(cause) };
+  }
 }

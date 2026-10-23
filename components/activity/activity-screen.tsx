@@ -26,14 +26,13 @@ export function ActivityScreen() {
         !checking.current.has(item.id),
     );
     if (open.length === 0) return;
-    let cancelled = false;
     for (const item of open) {
       const hash = item.hash;
       if (!isExtrinsicHash(hash)) continue;
       checking.current.add(item.id);
       void reconcileExtrinsic(api, hash)
         .then((found) => {
-          if (cancelled || found === "unchecked") return;
+          if (found === "unchecked") return;
           const next = outcomeAfterWait({
             hash,
             sawIncluded: item.status === "included",
@@ -48,9 +47,6 @@ export function ActivityScreen() {
           checking.current.delete(item.id);
         });
     }
-    return () => {
-      cancelled = true;
-    };
   }, [txs, chain.status, chain.blockNumber, chain]);
 
   useEffect(() => {
@@ -88,7 +84,7 @@ export function ActivityScreen() {
         <div className="border-b border-line px-4 py-3">
           <h2 className="text-sm font-medium">Build record</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            These calls can be signed from the app. None of them has a hash from this build. A local project record is not an extrinsic.
+            These calls can be signed from the app. Finalized hashes from the testnet runs are in the demo script. This list is the call catalog, not a claim that no hash exists.
           </p>
           <p className="mt-2 text-xs leading-5 text-faint">
             Live read: {countLine("asset metadata records", chain.assets ? chain.assets.length : null)},{" "}

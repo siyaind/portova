@@ -12,12 +12,12 @@ export function Button({
 }: ButtonProps) {
   const styles =
     variant === "primary"
-      ? "bg-violet text-violet-ink shadow-[0_0_24px_rgb(141_125_255/0.28)] hover:brightness-110 disabled:hover:brightness-100"
+      ? "bg-violet text-violet-ink shadow-[0_4px_20px_rgb(186_155_255/0.15)] hover:brightness-110 disabled:hover:brightness-100"
       : "border border-line bg-panel text-ink hover:bg-panel-2";
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}
+      className={`portal-button inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}
       {...props}
     />
   );
@@ -31,7 +31,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`min-w-0 max-w-full overflow-hidden rounded-2xl border border-white/10 bg-panel/80 shadow-[0_20px_60px_rgb(0_0_0/0.28)] backdrop-blur-md ${className}`}>
+    <section className={`portal-panel min-w-0 max-w-full overflow-hidden rounded-2xl border border-white/8 ${className}`}>
       {children}
     </section>
   );
@@ -47,14 +47,14 @@ export function PageIntro({
   body: string;
 }) {
   return (
-    <header className="rise max-w-2xl">
-      <p className="text-xs font-medium tracking-[0.14em] text-violet uppercase">
+    <header className="page-intro rise max-w-3xl">
+      <p className="page-eyebrow text-[10px] font-semibold tracking-[0.2em] text-violet uppercase">
         {eyebrow}
       </p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+      <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] sm:text-[2.6rem] sm:leading-tight">
         {title}
       </h1>
-      <p className="mt-3 text-sm leading-6 text-muted">{body}</p>
+      <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">{body}</p>
     </header>
   );
 }
@@ -67,14 +67,14 @@ export function StatusPill({
   children: ReactNode;
 }) {
   const toneClass = {
-    ok: "bg-ok/15 text-ok",
-    warn: "bg-warn/15 text-warn",
-    bad: "bg-bad/15 text-bad",
-    muted: "bg-panel-2 text-muted",
+    ok: "bg-ok/10 text-ok border-ok/15",
+    warn: "bg-warn/10 text-warn border-warn/15",
+    bad: "bg-bad/10 text-bad border-bad/15",
+    muted: "bg-panel-2 text-muted border-white/5",
   }[tone];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${toneClass}`}
+      className={`status-pill inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium ${toneClass}`}
     >
       {children}
     </span>

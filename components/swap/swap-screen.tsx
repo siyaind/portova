@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { Activity, ArrowDownUp, ArrowUpRight, Coins, ShieldCheck } from "lucide-react";
 import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
@@ -38,7 +40,7 @@ export function SwapScreen() {
     return { symbols, decimals };
   }, [chain.assets]);
   const pools = chain.pools;
-  const [poolIndex, setPoolIndex] = useState(0);
+  const [poolLp, setPoolLp] = useState<string | null>(null);
   const [flip, setFlip] = useState(false);
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
@@ -48,7 +50,7 @@ export function SwapScreen() {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
-  const pool = pools?.[poolIndex] ?? null;
+  const pool = pools?.find((item) => item.lpToken === poolLp) ?? pools?.[0] ?? null;
   const assetIn = pool ? (flip ? pool.asset2 : pool.asset1) : null;
   const assetOut = pool ? (flip ? pool.asset1 : pool.asset2) : null;
   const decimalsIn = assetIn ? assetDecimals(assetIn, maps.decimals) : null;
@@ -59,6 +61,10 @@ export function SwapScreen() {
       ? swapQuoteKey(pool.lpToken, flip, amountIn.toString(), chain.blockNumber)
       : "";
   const liveQuote = quote && quote.key === quoteKey && quoteState === "ready" ? quote.out : null;
+
+  useEffect(() => {
+    setAmount("");
+  }, [pool?.lpToken]);
 
   useEffect(() => {
     const api = chain.getApi();
@@ -140,11 +146,12 @@ export function SwapScreen() {
     <div className="space-y-6">
       <PageIntro
         eyebrow="Swap"
-        title="Trade against a real pool"
-        body="The quote comes from AssetConversion.quotePriceExactTokensForTokens and includes the pool fee. If the node returns no quote, this screen does not invent a price."
+        title="Find your flow."
+        body="Swap native assets with a live network quote. Choose your pair, set your slippage, and review the minimum you'll receive before signing."
       />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-        <Panel className="space-y-4 p-4">
+        <Panel className="swap-terminal space-y-5 p-5 sm:p-6">
+          <div className="swap-terminal-heading"><span><ArrowDownUp size={16} /> Swap assets</span><span className="swap-testnet-tag">V3 TESTNET</span></div>
           {pools === null ? (
             <p className="text-sm text-muted">
               {chain.status === "connecting" ? "Reading pools from the testnet." : "The pool list is unavailable."}
@@ -159,43 +166,43 @@ export function SwapScreen() {
                 Pool
                 <select
                   className={`${FIELD} mt-1.5`}
-                  value={poolIndex}
-                  onChange={(event) => setPoolIndex(Number(event.target.value))}
+                  value={pool?.lpToken ?? ""}
+                  onChange={(event) => {
+                    setPoolLp(event.target.value);
+                    setAmount("");
+                  }}
                 >
-                  {pools.map((item, index) => (
-                    <option key={item.lpToken} value={index}>
+                  {pools.map((item) => (
+                    <option key={item.lpToken} value={item.lpToken}>
                       {poolLabel(item, maps.symbols)}
                     </option>
                   ))}
                 </select>
               </label>
-              <div className="flex items-center justify-between text-sm">
-                <span>{assetIn ? assetLabel(assetIn, maps.symbols) : "Pay"} to {assetOut ? assetLabel(assetOut, maps.symbols) : "receive"}</span>
-                <button type="button" className="text-blue" onClick={() => setFlip((value) => !value)}>
-                  Switch direction
-                </button>
-              </div>
+              <div className="swap-amount-box"><div className="swap-amount-label"><span>You pay</span><span className="swap-asset-badge"><Coins size={13} />{assetIn ? assetLabel(assetIn, maps.symbols) : "—"}</span></div>
               <input
-                className={FIELD}
+                aria-label="Amount to swap"
+                className="swap-amount-input"
                 inputMode="decimal"
                 value={amount}
                 placeholder="0"
                 disabled={!usable}
                 onChange={(event) => setAmount(event.target.value)}
               />
-              <div className="flex gap-2">
+              <div className="swap-amount-footer"><span>Receive {assetOut ? assetLabel(assetOut, maps.symbols) : "—"}</span><button type="button" aria-label="Switch swap direction" onClick={() => setFlip((value) => !value)}><ArrowDownUp size={13} /> Switch</button></div></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-muted">Slippage tolerance</span><div className="flex gap-1.5">
                 {["0.1", "0.5", "1"].map((item) => (
                   <button
                     key={item}
                     type="button"
                     aria-pressed={slippage === item}
                     onClick={() => setSlippage(item)}
-                    className={`rounded-md border px-3 py-1.5 text-sm ${slippage === item ? "border-violet" : "border-line text-muted"}`}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[10px] ${slippage === item ? "border-violet bg-violet/10 text-violet" : "border-line text-muted"}`}
                   >
                     {item}%
                   </button>
                 ))}
-              </div>
+              </div></div>
               {pool ? (
               <QuoteLines
                 pool={pool}
@@ -224,14 +231,7 @@ export function SwapScreen() {
           {wallet.error ? <p className="text-sm text-warn">{wallet.error}</p> : null}
           {message ? <p className="text-sm text-warn">{message}</p> : null}
         </Panel>
-        <Panel className="flex min-h-64 flex-col p-4">
-          <h2 className="text-sm font-medium">Price chart</h2>
-          <div className="grid flex-1 place-items-center rounded-lg border border-dashed border-line px-6 py-10 text-center">
-            <p className="max-w-sm text-sm leading-6 text-muted">
-              No trade history is indexed. A chart is not drawn from a single quote.
-            </p>
-          </div>
-        </Panel>
+        <div className="space-y-4"><Panel className="p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><h2 className="text-xs font-medium">Pool snapshot</h2><Link href="/liquidity" className="inline-flex items-center gap-1 text-[10px] text-violet">Manage liquidity <ArrowUpRight size={12} /></Link></div><div className="mt-5 grid grid-cols-2 gap-3">{pool ? [pool.asset1, pool.asset2].map((asset, index) => { const decimals = assetDecimals(asset, maps.decimals); const reserve = index === 0 ? pool.reserve1 : pool.reserve2; return <div key={index} className="swap-reserve-card"><span>{assetLabel(asset, maps.symbols)} reserves</span><strong>{reserve !== null && decimals !== null ? formatUnits(reserve, decimals) : "—"}</strong></div>; }) : <p className="col-span-2 text-xs text-muted">Choose an available pool to see its reserves.</p>}</div><p className="mt-4 flex items-center gap-2 text-[9px] text-faint"><ShieldCheck size={12} className="text-ok" /> Reserves read from the network. Quotes include the pool fee.</p></Panel><Panel className="p-5 sm:p-6"><h2 className="text-xs font-medium">Price history</h2><div className="swap-chart-empty"><span><Activity size={26} strokeWidth={1.3} /></span><h3>A fuller picture, in time.</h3><p>Trade history hasn&apos;t been indexed yet.<br />Your live swap quote is available in the terminal.</p></div></Panel></div>
       </div>
     </div>
   );

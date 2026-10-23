@@ -59,6 +59,59 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
+    let headsStarted = false;
+    let load = 0;
+
+    async function loadSnapshot(api: ApiPromise) {
+      const [chain, header, assetRows, collectionRows, collectionTotal, poolRows, poolTotal] =
+        await Promise.all([
+          api.rpc.system.chain(),
+          api.rpc.chain.getHeader(),
+          readAssets(api).catch(() => null),
+          readCollectionList(api).catch(() => null),
+          countEntries(api, "nfts", "collection").catch(() => null),
+          readPools(api).catch(() => null),
+          countEntries(api, "assetConversion", "pools").catch(() => null),
+        ]);
+      if (cancelled) return;
+      assetsRef.current = assetRows ?? [];
+      setChainName(chain.toString());
+      setBlockNumber(header.number.toString());
+      setAssets(assetRows);
+      setCollections(collectionRows);
+      setCollectionCount(collectionTotal);
+      setPools(poolRows);
+      setPoolCount(poolTotal);
+    }
+
+    async function ensureHeads(api: ApiPromise) {
+      if (headsStarted) return;
+      headsStarted = true;
+      try {
+        unsubscribe = await api.rpc.chain.subscribeNewHeads((head) => {
+          if (!cancelled) setBlockNumber(head.number.toString());
+        });
+      } catch (cause) {
+        headsStarted = false;
+        throw cause;
+      }
+    }
+
+    async function reload(api: ApiPromise) {
+      const ticket = ++load;
+      try {
+        await loadSnapshot(api);
+        if (cancelled || ticket !== load) return;
+        await ensureHeads(api);
+        if (cancelled || ticket !== load) return;
+        setStatus("live");
+        setError(null);
+      } catch (cause) {
+        if (cancelled || ticket !== load) return;
+        setStatus("unavailable");
+        setError(errorText(cause));
+      }
+    }
 
     async function connect() {
       try {
@@ -70,33 +123,19 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         apiRef.current = api;
-
-        const [chain, header, assetRows, collectionRows, collectionTotal, poolRows, poolTotal] =
-          await Promise.all([
-          api.rpc.system.chain(),
-          api.rpc.chain.getHeader(),
-          readAssets(api).catch(() => null),
-          readCollectionList(api).catch(() => null),
-          countEntries(api, "nfts", "collection").catch(() => null),
-          readPools(api).catch(() => null),
-          countEntries(api, "assetConversion", "pools").catch(() => null),
-        ]);
-        if (cancelled) return;
-
-        assetsRef.current = assetRows ?? [];
-        setChainName(chain.toString());
-        setBlockNumber(header.number.toString());
-        setAssets(assetRows);
-        setCollections(collectionRows);
-        setCollectionCount(collectionTotal);
-        setPools(poolRows);
-        setPoolCount(poolTotal);
-        setStatus("live");
-        setError(null);
-
-        unsubscribe = await api.rpc.chain.subscribeNewHeads((head) => {
-          if (!cancelled) setBlockNumber(head.number.toString());
+        api.on("disconnected", () => {
+          if (cancelled) return;
+          load += 1;
+          setStatus("unavailable");
+          setError("The testnet connection dropped. The client will try to reconnect.");
         });
+        api.on("connected", () => {
+          if (cancelled) return;
+          setStatus("connecting");
+          setError(null);
+          void reload(api);
+        });
+        await reload(api);
       } catch (cause) {
         if (cancelled) return;
         setStatus("unavailable");
@@ -167,6 +206,7 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
         if (!api) {
           return {
             free: null,
+            spendable: null,
             holdings: [],
             error: "The testnet connection is not available.",
           };
@@ -174,7 +214,7 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
         try {
           return await readAccount(api, address, assetsRef.current);
         } catch (cause) {
-          return { free: null, holdings: [], error: errorText(cause) };
+          return { free: null, spendable: null, holdings: [], error: errorText(cause) };
         }
       },
     }),

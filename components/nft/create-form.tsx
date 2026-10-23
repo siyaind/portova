@@ -20,6 +20,7 @@ import {
   type NftConstants,
 } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { isProceedsAddress } from "@/lib/project";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink placeholder:text-faint";
@@ -209,6 +210,10 @@ export function CreateCollectionForm() {
       admin: signer.address,
       mintTo: mintTo.trim() || signer.address,
     };
+    if (!isProceedsAddress(signed.mintTo)) {
+      setFormError("The mint destination is not a testnet address. Nothing was submitted.");
+      return;
+    }
     setSubmitting(true);
     setSubmitPhase("signing");
     let tracked: string | null = null;
@@ -266,8 +271,8 @@ export function CreateCollectionForm() {
     <div className="space-y-6">
       <PageIntro
         eyebrow="NFT launchpad"
-        title="Create a collection and mint one item"
-        body="One signature sends nfts.create, collection metadata, mint, and optional item metadata as a single batch. If any call fails, none of them are kept. The chain assigns the collection id. You become the owner, issuer, admin, and freezer."
+        title="Create a world worth owning."
+        body="Start a collection and mint its first item with one signature. Add your metadata, choose your mint settings, and decide what stays editable. You keep the collection's management roles."
       />
       <form
         onSubmit={(event) => void onSubmit(event)}

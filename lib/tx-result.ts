@@ -85,6 +85,19 @@ export function outcomeAfterWait(input: {
   };
 }
 
+export function extrinsicDispatch(
+  events: { event: { section: string; method: string } }[] | undefined,
+): "success" | "failed" | "unknown" {
+  if (!events || events.length === 0) return "unknown";
+  let success = false;
+  for (const record of events) {
+    if (record.event.section !== "system") continue;
+    if (record.event.method === "ExtrinsicFailed") return "failed";
+    if (record.event.method === "ExtrinsicSuccess") success = true;
+  }
+  return success ? "success" : "unknown";
+}
+
 export function signingLabel(phase: TxStatus | null, idle: string): string {
   if (phase === "submitted") return "Submitted";
   if (phase === "included") return "Included";

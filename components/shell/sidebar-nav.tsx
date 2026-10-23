@@ -8,8 +8,13 @@ export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Primary" className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-6">
-      {NAV_ITEMS.map((item) => {
+    <nav aria-label="Primary" className="sidebar-navigation flex flex-1 flex-col overflow-y-auto">
+      {[
+        { label: "Discover", hrefs: ["/overview", "/explore"] },
+        { label: "Create & trade", hrefs: ["/token-launchpad", "/nft-launchpad", "/swap", "/liquidity", "/market"] },
+        { label: "Your workspace", hrefs: ["/studio", "/portfolio", "/treasury"] },
+        { label: "Resources", hrefs: ["/run", "/activity", "/settings"] },
+      ].map((group) => <div key={group.label} className="nav-group"><p>{group.label}</p>{group.hrefs.map((href) => NAV_ITEMS.find((item) => item.href === href)!).map((item) => {
         const active = isActive(pathname, item.href);
         const Icon = item.icon;
         return (
@@ -17,17 +22,14 @@ export function SidebarNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-2.5 rounded-lg border-l-2 px-2.5 py-2 text-sm transition ${
-              active
-                ? "border-violet bg-violet/15 text-ink shadow-[inset_0_0_24px_rgb(141_125_255/0.12)]"
-                : "border-transparent text-muted hover:bg-white/5 hover:text-ink"
-            }`}
+            className={`sidebar-link ${active ? "sidebar-link-active" : ""}`}
           >
-            <Icon size={16} aria-hidden />
+            <Icon size={17} strokeWidth={1.7} aria-hidden />
             {item.label}
+            {active ? <span className="nav-active-dot" /> : null}
           </Link>
         );
-      })}
+      })}</div>)}
     </nav>
   );
 }

@@ -13,6 +13,7 @@ import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
 import { readItemProfile } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { isProceedsAddress } from "@/lib/project";
 
 const FIELD = "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm";
 
@@ -69,7 +70,12 @@ export function MarketScreen() {
   }, [chain.status, chain.collections, chain.getApi]);
 
   const tradingOff = trading !== true;
+  const saleKey = `${collectionId.trim()}:${itemId.trim()}`;
   const idsValid = /^\d+$/.test(collectionId.trim()) && /^\d+$/.test(itemId.trim());
+
+  useEffect(() => {
+    setSale(null);
+  }, [saleKey]);
 
   async function loadSale() {
     setMessage(null);
@@ -114,7 +120,20 @@ export function MarketScreen() {
     }
     const collection = Number(collectionId.trim());
     const item = Number(itemId.trim());
-    const current = await readItemProfile(api, String(collection), String(item));
+    let freshSale;
+    let current;
+    try {
+      freshSale = await readItemSale(api, String(collection), String(item));
+      current = await readItemProfile(api, String(collection), String(item));
+    } catch (cause) {
+      setMessage(errorText(cause));
+      return;
+    }
+    if (kind === "buy" && (!freshSale.listed || !freshSale.price)) {
+      setSale(null);
+      setMessage("This item is not listed, so the wallet was not opened.");
+      return;
+    }
     if (!current.found || !current.owner) {
       setMessage("That item is not minted, so no price was submitted.");
       return;
@@ -162,7 +181,12 @@ export function MarketScreen() {
             setMessage("Enter a price greater than zero.");
             return;
           }
-          tx = buildSetPrice(api, collection, item, priceRaw, buyer.trim() || null);
+          const namedBuyer = buyer.trim();
+          if (namedBuyer && !isProceedsAddress(namedBuyer)) {
+            setMessage("The named buyer is not a testnet address, so the wallet was not opened.");
+            return;
+          }
+          tx = buildSetPrice(api, collection, item, priceRaw, namedBuyer || null);
           label = `List item ${collection}/${item}`;
         }
       }

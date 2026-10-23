@@ -53,13 +53,15 @@ export function SubstrateWalletProvider({
         "@polkadot/extension-dapp"
       );
       const enabled = web3Enable("PORTOVA");
-      enableTask.current = enabled;
-      void enabled.finally(() => {
-        enableTask.current = null;
-      });
       let timer = 0;
+      const tracked = enabled.finally(() => {
+        enableTask.current = null;
+        window.clearTimeout(timer);
+      });
+      void tracked.catch(() => undefined);
+      enableTask.current = tracked;
       const extensions = await Promise.race([
-        enabled.finally(() => window.clearTimeout(timer)),
+        tracked,
         new Promise<never>((_, reject) => {
           timer = window.setTimeout(() => {
             reject(

@@ -234,8 +234,8 @@ export function CreateTokenForm() {
     <div className="space-y-6">
       <PageIntro
         eyebrow="Token launchpad"
-        title="Create and mint an asset"
-        body="One signature sends assets.create, assets.setMetadata, and assets.mint as a single batch. If any call fails, none of them are kept. The signing account becomes owner, issuer, admin, and freezer, so it can mint more until that role changes."
+        title="Give your idea an identity."
+        body="Name your token, choose its supply, and launch a native asset with one signature. You become its owner, issuer, admin, and freezer, and can mint more while the issuer role remains."
       />
       <form
         onSubmit={(event) => void onSubmit(event)}

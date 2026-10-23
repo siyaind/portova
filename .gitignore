@@ -5,3 +5,6 @@ out
 .env
 .env.*
 tsconfig.tsbuildinfo
+
+.vercel
+.env*

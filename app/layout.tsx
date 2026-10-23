@@ -16,15 +16,15 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PORTOVA",
-  description: "Create, launch, trade, and own assets on Portaldot V3 testnet.",
+  title: "Portova — Create. Launch. Trade. Own.",
+  description: "A home for your next onchain idea. Create native tokens, launch NFT collections, and bring your assets together on Portaldot V3 Testnet.",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" data-scroll-behavior="smooth" className={`${sans.variable} ${mono.variable}`}>
       <body className="font-sans antialiased">
         <Providers>
           <AppShell>{children}</AppShell>

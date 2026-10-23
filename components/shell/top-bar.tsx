@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Menu, Search } from "lucide-react";
+import { Bell, Menu, Search, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useChain } from "@/components/chain/chain-provider";
 import { isExtrinsicHash, txStatusLabel, useTxs } from "@/components/tx/tx-tracker";
@@ -50,7 +50,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
 
   return (
     <>
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-white/8 bg-[#07080c]/70 px-3 backdrop-blur-xl sm:gap-3 sm:px-4">
+    <header className="app-topbar sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-white/6 px-4 backdrop-blur-xl sm:gap-4 sm:px-7 lg:px-9">
       <button
         type="button"
         className="rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink lg:hidden"
@@ -59,14 +59,15 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
       >
         <Menu size={18} />
       </button>
+      <span className="topbar-workspace-label hidden xl:block">Workspace <span>/</span></span>
       <SearchBox />
       <div
-        className="hidden items-center gap-2 rounded-full border border-line bg-panel px-3 py-1.5 text-xs sm:flex"
+        className="hidden items-center gap-2 rounded-full border border-line bg-panel/60 px-3 py-2 text-[10px] sm:flex"
         title="This build only talks to Portaldot V3 testnet."
       >
         <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
-        <span>Portaldot V3 Testnet</span>
-        <span className="font-mono text-faint">{CHAIN_ID}</span>
+        <span>V3 Testnet</span>
+        <span className="hidden font-mono text-faint 2xl:inline">{CHAIN_ID}</span>
         {chain.blockNumber ? (
           <span className="font-mono text-muted">#{chain.blockNumber}</span>
         ) : null}
@@ -93,7 +94,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
           <div
             role="dialog"
             aria-label="Transactions"
-            className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-4 shadow-2xl shadow-black/40"
+            className="transaction-popover absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-4 shadow-2xl shadow-black/40"
           >
             <p className="text-sm font-medium">Transactions</p>
             {txs.items.length === 0 ? (
@@ -132,10 +133,11 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
       </div>
       <button
         type="button"
-        className="rounded-lg border border-line bg-panel px-3 py-1.5 text-sm hover:bg-panel-2"
+        className="wallet-connect-button inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold sm:px-4"
+        aria-label={walletLabel === "Connect" ? "Connect wallet" : `Manage wallet ${walletLabel}`}
         onClick={() => setWalletOpen(true)}
       >
-        {walletLabel}
+        <Wallet size={14} /><span>{walletLabel === "Connect" ? "Connect wallet" : walletLabel}</span>
       </button>
       <WalletDialog open={walletOpen} onClose={() => setWalletOpen(false)} />
     </header>
@@ -235,8 +237,8 @@ function SearchBox() {
         id={formId}
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Asset id, collection id, or address"
-        className="h-9 w-full rounded-lg border border-line bg-panel pr-3 pl-9 text-sm text-ink placeholder:text-faint"
+        placeholder="Search assets, collections, addresses…"
+        className="topbar-search h-10 w-full rounded-xl border border-line bg-panel/60 pr-3 pl-9 text-xs text-ink placeholder:text-faint"
       />
       {result ? (
         <div
