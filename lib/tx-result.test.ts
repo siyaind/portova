@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { outcomeAfterWait, outcomeWithoutHash, statusWithoutHash, txResultMessage } from "./tx-result.ts";
+import { extrinsicDispatch, outcomeAfterWait, outcomeWithoutHash, statusWithoutHash, txResultMessage } from "./tx-result.ts";
 
 test("only finalization is described as final", () => {
   assert.equal(txResultMessage("finalized"), "Finalized.");
@@ -8,6 +8,13 @@ test("only finalization is described as final", () => {
   assert.match(txResultMessage("submitted"), /not a final result/);
   assert.equal(txResultMessage("failed", "MethodDisabled"), "MethodDisabled");
   assert.match(txResultMessage("ambiguous"), /not proof the transaction failed/);
+});
+
+test("finalized success requires system.ExtrinsicSuccess", () => {
+  assert.equal(extrinsicDispatch([{ event: { section: "system", method: "ExtrinsicSuccess" } }]), "success");
+  assert.equal(extrinsicDispatch([{ event: { section: "system", method: "ExtrinsicFailed" } }]), "failed");
+  assert.equal(extrinsicDispatch([{ event: { section: "assets", method: "Created" } }]), "unknown");
+  assert.equal(extrinsicDispatch(undefined), "unknown");
 });
 
 test("a wallet cancel or a rejected fee with no hash stays unknown", () => {

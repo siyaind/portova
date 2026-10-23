@@ -57,7 +57,7 @@ export default function SettingsPage() {
         />
         <Setting
           label="Deployment"
-          value="Local only. No contract, indexer, custom AMM, or mainnet endpoint is configured."
+          value="Hosted at portova.vercel.app. No contract, indexer, custom AMM, or mainnet endpoint is configured."
         />
         <Setting
           label="Trust"

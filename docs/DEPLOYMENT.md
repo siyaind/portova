@@ -2,11 +2,19 @@
 
 Status: hosted on Vercel at https://portova.vercel.app. The site talks only to the V3 testnet. It does not configure mainnet and it does not hold a wallet key.
 
-Date: 2026-10-19. Chain read at block 100872.
+Latest deployment: 2026-10-22. The historical chain baseline below was read on 2026-10-19 at block 100872.
 
 ## Hosted site
 
 https://portova.vercel.app
+
+The 2026-10-22 design refresh is deployed to production. `/` is the public landing page; `/overview` opens the app dashboard. The refreshed app includes shared backgrounds, navigation, responsive styling, and a redesigned swap interface.
+
+- Deployment: `dpl_615UYTXwcrNaPANELYwGybT8zMKV`
+- Deployment URL: https://portova-45svp8vgz-rishu4436s-projects.vercel.app
+- Vercel status: READY, production alias assigned.
+- Verification: the public landing page, dashboard, and swap page returned HTTP 200 and contained the new design. Vercel's build and TypeScript checks passed.
+- `.vercelignore` explicitly excludes local environment files, Git metadata, dependencies, and local build outputs from the source upload.
 
 The host serves the same Next.js app. A visitor still signs with their own Substrate wallet extension. The first chain connection can take about half a minute.
 
@@ -34,7 +42,7 @@ No `.env` file is required. No seed, private key, or write-scoped credential bel
 
 - No contract, no custom AMM, and no indexer or database.
 - No mainnet endpoint. Legacy `wss://mainnet.portaldot.io` is a different runtime and is not configured.
-- No hosted frontend. The source is in the private repository `https://github.com/rishu4436/portova`. That repository is not a running deployment.
+- The frontend is hosted on Vercel. The private source repository is `https://github.com/rishu4436/portova`.
 - No `balances.transfer`. Sale proceeds stay in the proceeds account.
 
 ## Chain read used for reconciliation

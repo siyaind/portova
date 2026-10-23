@@ -21,6 +21,7 @@ import {
   type ItemProfile,
 } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { isProceedsAddress } from "@/lib/project";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 
 export function CollectionProfile({ id }: { id: string }) {
@@ -298,9 +299,14 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
       return;
     }
     const api = chain.getApi();
-    const nextItem = Number(itemId);
-    if (!api || !Number.isInteger(nextItem) || nextItem < 0) {
-      setMessage("Enter an item id before signing.");
+    const nextItem = Number(itemId.trim());
+    if (!api || !/^\d+$/.test(itemId.trim()) || !Number.isSafeInteger(nextItem) || nextItem < 0 || nextItem > 4_294_967_295) {
+      setMessage("Item id must be a whole number from 0 to 4294967295.");
+      return;
+    }
+    const destination = to.trim() || signer.address;
+    if (!isProceedsAddress(destination)) {
+      setMessage("The destination is not a testnet address, so the wallet was not opened.");
       return;
     }
     setBusy(true);
@@ -312,7 +318,7 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       const result = await signAndSend(
         api,
-        buildMintItem(api, Number(profile.id), nextItem, to.trim() || signer.address, profile.price),
+        buildMintItem(api, Number(profile.id), nextItem, destination, profile.price),
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),

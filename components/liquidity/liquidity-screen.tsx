@@ -20,6 +20,7 @@ import {
   poolLabel,
   readLpBalance,
   readPoolConstants,
+  readReserves,
   reservesUsable,
   sameAsset,
   type AssetRef,
@@ -39,7 +40,7 @@ export function LiquidityScreen() {
   const [constants, setConstants] = useState<PoolConstants | null>(null);
   const [left, setLeft] = useState<AssetRef>({ kind: "native" });
   const [right, setRight] = useState<AssetRef>({ kind: "asset", id: chain.assets?.[0]?.id ?? "1" });
-  const [poolIndex, setPoolIndex] = useState(0);
+  const [poolLp, setPoolLp] = useState<string | null>(null);
   const [amount1, setAmount1] = useState("");
   const [amount2, setAmount2] = useState("");
   const [lpAmount, setLpAmount] = useState("");
@@ -50,7 +51,16 @@ export function LiquidityScreen() {
   const amounts = useRef({ first: "", second: "" });
   const [busy, setBusy] = useState<string | null>(null);
 
-  const pool = chain.pools?.[poolIndex] ?? null;
+  const pool = chain.pools?.find((item) => item.lpToken === poolLp) ?? chain.pools?.[0] ?? null;
+
+  useEffect(() => {
+    amounts.current = { first: "", second: "" };
+    setAmount1("");
+    setAmount2("");
+    setLpAmount("");
+    setAddMessage(null);
+    setMessage(null);
+  }, [pool?.lpToken]);
 
   useEffect(() => {
     const api = chain.getApi();
@@ -125,8 +135,8 @@ export function LiquidityScreen() {
     <div className="space-y-6">
       <PageIntro
         eyebrow="Liquidity"
-        title="Pools on AssetConversion"
-        body="Pools, deposits, and withdrawals use the runtime pallet. PORTOVA does not deploy an AMM. Each action is its own signature. A swap quote appears only after a pool reports reserves."
+        title="Bring your assets together."
+        body="Create a pool, manage your deposits, and withdraw liquidity from your wallet. Every action is a separate signature, with reserves and fees read from the network."
       />
       <Panel className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -145,13 +155,13 @@ export function LiquidityScreen() {
           </p>
         ) : (
           <ul className="mt-3 space-y-3">
-            {chain.pools.map((item, index) => (
+            {chain.pools.map((item) => (
               <li key={item.lpToken}>
                 <button
                   type="button"
-                  onClick={() => setPoolIndex(index)}
+                  onClick={() => setPoolLp(item.lpToken)}
                   className={`w-full rounded-lg border px-3 py-3 text-left ${
-                    index === poolIndex ? "border-violet" : "border-line"
+                    item.lpToken === pool?.lpToken ? "border-violet" : "border-line"
                   }`}
                 >
                   <span className="text-sm font-medium">{poolLabel(item, maps.symbols)}</span>
@@ -284,13 +294,13 @@ export function LiquidityScreen() {
       return;
     }
     const snapshot = await chain.readAccount(signer.address);
-    const free = snapshot.free?.replace(/,/g, "") ?? "";
-    if (snapshot.error || !/^\d+$/.test(free)) {
-      setAddMessage(snapshot.error ?? "The account balance could not be read, so the wallet was not opened.");
+    const spendable = snapshot.spendable?.replace(/,/g, "") ?? "";
+    if (snapshot.error || !/^\d+$/.test(spendable)) {
+      setAddMessage(snapshot.error ?? "The spendable balance could not be read, so the wallet was not opened.");
       return;
     }
-    const have1 = assetBalance(pool.asset1, BigInt(free), snapshot.holdings);
-    const have2 = assetBalance(pool.asset2, BigInt(free), snapshot.holdings);
+    const have1 = assetBalance(pool.asset1, BigInt(spendable), snapshot.holdings);
+    const have2 = assetBalance(pool.asset2, BigInt(spendable), snapshot.holdings);
     const name1 = assetLabel(pool.asset1, maps.symbols);
     const name2 = assetLabel(pool.asset2, maps.symbols);
     const short = [desired1 > have1 ? name1 : null, desired2 > have2 ? name2 : null].filter((name): name is string => Boolean(name));
@@ -302,8 +312,21 @@ export function LiquidityScreen() {
       return;
     }
     setAddMessage(null);
-    const reserve1 = pool.reserve1 && /^\d+$/.test(pool.reserve1) ? BigInt(pool.reserve1) : null;
-    const reserve2 = pool.reserve2 && /^\d+$/.test(pool.reserve2) ? BigInt(pool.reserve2) : null;
+    const api = chain.getApi();
+    if (!api) {
+      setAddMessage("The testnet connection is unavailable, so the wallet was not opened.");
+      return;
+    }
+    let fresh1: string | null = null;
+    let fresh2: string | null = null;
+    try {
+      [fresh1, fresh2] = await readReserves(api, pool.asset1, pool.asset2);
+    } catch (cause) {
+      setAddMessage(errorText(cause));
+      return;
+    }
+    const reserve1 = fresh1 && /^\d+$/.test(fresh1.replace(/,/g, "")) ? BigInt(fresh1.replace(/,/g, "")) : null;
+    const reserve2 = fresh2 && /^\d+$/.test(fresh2.replace(/,/g, "")) ? BigInt(fresh2.replace(/,/g, "")) : null;
     const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
     const min1 = deposit ? applySlippage(deposit.amount1, slippage) : null;
     const min2 = deposit ? applySlippage(deposit.amount2, slippage) : null;
@@ -328,8 +351,21 @@ export function LiquidityScreen() {
       setMessage("Enter an LP amount you hold.");
       return;
     }
-    const min1 = withdrawalMin(pool.reserve1, pool.lpSupply, raw, slippage);
-    const min2 = withdrawalMin(pool.reserve2, pool.lpSupply, raw, slippage);
+    const api = chain.getApi();
+    if (!api) {
+      setMessage("The testnet connection is unavailable, so the wallet was not opened.");
+      return;
+    }
+    let fresh1: string | null = null;
+    let fresh2: string | null = null;
+    try {
+      [fresh1, fresh2] = await readReserves(api, pool.asset1, pool.asset2);
+    } catch (cause) {
+      setMessage(errorText(cause));
+      return;
+    }
+    const min1 = withdrawalMin(fresh1, pool.lpSupply, raw, slippage);
+    const min2 = withdrawalMin(fresh2, pool.lpSupply, raw, slippage);
     if (min1 === null || min2 === null) {
       setMessage("Reserves or LP supply are unavailable, so a minimum receive amount was not invented.");
       return;
@@ -374,10 +410,12 @@ function withdrawalMin(
   burn: bigint,
   slippage: string,
 ): bigint | null {
-  if (!reserve || !supply || !/^\d+$/.test(reserve) || !/^\d+$/.test(supply)) return null;
-  const supplyRaw = BigInt(supply);
+  const reserveRaw = reserve?.replace(/,/g, "") ?? "";
+  const supplyRawText = supply?.replace(/,/g, "") ?? "";
+  if (!/^\d+$/.test(reserveRaw) || !/^\d+$/.test(supplyRawText)) return null;
+  const supplyRaw = BigInt(supplyRawText);
   if (supplyRaw <= BigInt(0)) return null;
-  const expected = (BigInt(reserve) * burn) / supplyRaw;
+  const expected = (BigInt(reserveRaw) * burn) / supplyRaw;
   return applySlippage(expected, slippage);
 }
 

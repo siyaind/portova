@@ -33,7 +33,7 @@ export function useProceedsBalance(address: string): {
         if (!cancelled) {
           setRow({
             address: trimmed,
-            snapshot: { free: null, holdings: [], error: errorText(cause) },
+            snapshot: { free: null, spendable: null, holdings: [], error: errorText(cause) },
           });
         }
       });
