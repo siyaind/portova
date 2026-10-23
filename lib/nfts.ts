@@ -133,14 +133,14 @@ export function buildMintItem(
   return api.tx.nfts.mint(collectionId, itemId, mintTo, witness);
 }
 
-export function buildCollectionMintTx(api: ApiPromise, params: CollectionMintParams) {
+function collectionCalls(api: ApiPromise, params: CollectionMintParams, includeCreate: boolean) {
   const steps = collectionMintSteps({
     transferable: params.transferable,
     metadataEditable: params.metadataEditable,
     lockMaxSupply: params.maxSupply !== null,
     hasItemMetadata: params.itemMetadata !== null,
-  });
-  const calls = steps.map((step) => {
+  }).filter((step) => includeCreate || step.call !== "create");
+  return steps.map((step) => {
     if (step.call === "create") {
       return api.tx.nfts.create(params.admin, {
         settings: step.settings,
@@ -173,7 +173,18 @@ export function buildCollectionMintTx(api: ApiPromise, params: CollectionMintPar
     }
     return api.tx.nfts.lockItemProperties(params.collectionId, params.itemId, step.lockMetadata, step.lockAttributes);
   });
-  return api.tx.utility.batchAll(calls);
+}
+
+export function buildCollectionCreateTx(api: ApiPromise, params: CollectionMintParams) {
+  const create = collectionCalls(api, params, true)[0];
+  if (!create) throw new Error("The collection create call was not built.");
+  return create;
+}
+
+export function buildCollectionFinishTx(api: ApiPromise, params: CollectionMintParams) {
+  const calls = collectionCalls(api, params, false);
+  if (calls.length === 0) throw new Error("The collection has no metadata or mint call to sign.");
+  return calls.length === 1 ? calls[0] : api.tx.utility.batchAll(calls);
 }
 
 export function collectionIdFromEvents(result: {

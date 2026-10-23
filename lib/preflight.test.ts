@@ -7,8 +7,8 @@ const HASH = `0x${"ab".repeat(32)}`;
 function txOf(fee: string) {
   const tx = {
     id: "same-call",
-    paymentInfo: async (_payer: string, blockHash?: string) => {
-      assert.equal(blockHash, HASH);
+    paymentInfo: async (payer: string) => {
+      assert.equal(payer, "alice");
       return { partialFee: { toString: () => fee } };
     },
   };
@@ -25,6 +25,7 @@ test("preflight keeps the reviewed call and refuses an unaffordable one", async 
     accountAt: async () => ({ free: "100", reserved: "0", frozen: 0n, existentialDeposit: "10" }),
     decimals: 0,
     symbol: "UNIT",
+    feeShortfall: 0n,
   });
   assert.equal(affordable.ok, true);
   if (!affordable.ok) return;
@@ -41,6 +42,7 @@ test("preflight keeps the reviewed call and refuses an unaffordable one", async 
     accountAt: async () => ({ free: "20", reserved: "0", frozen: 0n, existentialDeposit: "10" }),
     decimals: 0,
     symbol: "UNIT",
+    feeShortfall: 0n,
   });
   assert.equal(short.ok, false);
   if (short.ok) return;
@@ -55,16 +57,18 @@ test("an unknown deposit or a V3 account that cannot pay is not treated as succe
     nativeDebits: [null],
     finalizedHash: async () => HASH,
     accountAt: async () => ({ free: "100", reserved: "0", frozen: 0n, existentialDeposit: "10" }),
+    feeShortfall: 0n,
   });
   assert.equal(missing.ok, false);
   if (!missing.ok) assert.match(missing.message, /not proof the call will succeed/);
 
   const observed = await reviewCall({
     tx: txOf("10000000000000"),
-    payer: "empty",
+    payer: "alice",
     nativeDebits: [0n],
     finalizedHash: async () => HASH,
     accountAt: async () => ({ free: "0", reserved: "0", frozen: 0n, existentialDeposit: "10000000000000" }),
+    feeShortfall: 0n,
   });
   assert.equal(observed.ok, false);
 });

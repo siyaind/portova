@@ -9,6 +9,7 @@ import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
 import { reviewExtrinsic } from "@/lib/preflight";
+import { WALLET_MOVE_WARNING } from "@/lib/quote-window";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
@@ -212,15 +213,25 @@ export function MarketScreen() {
         setMessage(review.message);
         return;
       }
-      if (kind === "buy") {
+      const listingStillCurrent = async () => {
+        if (kind !== "buy") return true;
         const again = await readItemSale(api, String(collection), String(item));
-        if (!again.listed || again.price !== reviewedPrice || again.buyer !== reviewedBuyer) {
-          setMessage("The listing changed after the fee check. Nothing was submitted.");
-          return;
-        }
+        return Boolean(again.listed && again.price === reviewedPrice && again.buyer === reviewedBuyer);
+      };
+      if (!(await listingStillCurrent())) {
+        setMessage("The listing changed after the fee check. Nothing was submitted.");
+        return;
       }
       txs.push({ id, label, status: "signing" });
-      const result = await signAndSend(api, review.tx, signer.address, injected.signer, (update) => txs.patch(id, update));
+      const result = await signAndSend(
+        api,
+        review.tx,
+        signer.address,
+        injected.signer,
+        (update) => txs.patch(id, update),
+        undefined,
+        kind === "buy" ? listingStillCurrent : undefined,
+      );
       if (result.status === "finalized" || result.status === "included") await loadSale();
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
@@ -357,6 +368,7 @@ export function MarketScreen() {
             Bid ({NATIVE_SYMBOL})
             <input className={`${FIELD} mt-1.5 font-mono`} inputMode="decimal" value={bid} onChange={(event) => setBid(event.target.value)} />
           </label>
+          <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
           <Action disabled={tradingOff || Boolean(busy) || !sale?.listed} onClick={() => void submit("buy")}>
             {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "buy" ? "Waiting for the wallet…" : signer ? "Buy item" : "Connect Substrate wallet"}
           </Action>

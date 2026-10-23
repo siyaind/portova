@@ -136,11 +136,35 @@ export async function signAndSend(
         events?: ChainEvent[];
       }) => void,
     ) => Promise<() => void>;
+    signAsync?: (
+      address: string,
+      options: { signer: Signer },
+    ) => Promise<{
+      send: (
+        callback: (result: {
+          txHash: { toHex(): string };
+          txIndex?: number;
+          dispatchError?: { isModule?: boolean; asModule?: unknown; toString(): string };
+          status: {
+            isInBlock: boolean;
+            isFinalized: boolean;
+            isBroadcast: boolean;
+            isReady: boolean;
+            isDropped: boolean;
+            isInvalid: boolean;
+            isUsurped: boolean;
+            type: string;
+          };
+          events?: ChainEvent[];
+        }) => void,
+      ) => Promise<() => void>;
+    }>;
   },
   address: string,
   signer: Signer,
   onUpdate: (update: TxUpdate) => void,
   decorate?: (result: { events?: ChainEvent[] }) => Partial<TxUpdate>,
+  revalidate?: () => Promise<boolean>,
 ): Promise<TxUpdate> {
   const signWaitMs = 180_000;
   const statusWaitMs = 120_000;
@@ -175,7 +199,22 @@ export async function signAndSend(
       }, statusWaitMs);
     };
 
-    tx.signAndSend(address, { signer }, (result) => {
+    const handle = (result: {
+      txHash: { toHex(): string };
+      txIndex?: number;
+      dispatchError?: { isModule?: boolean; asModule?: unknown; toString(): string };
+      status: {
+        isInBlock: boolean;
+        isFinalized: boolean;
+        isBroadcast: boolean;
+        isReady: boolean;
+        isDropped: boolean;
+        isInvalid: boolean;
+        isUsurped: boolean;
+        type: string;
+      };
+      events?: ChainEvent[];
+    }) => {
       const hash = result.txHash.toHex();
       lastHash = hash;
       armStatusWait(hash);
@@ -236,19 +275,60 @@ export async function signAndSend(
           error: `The node reported the transaction as ${result.status.type}.`,
         });
       }
-    })
-      .then((unsub) => {
-        unsubscribe = unsub;
-        if (settled) unsub();
-      })
-      .catch((error: unknown) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(signTimer);
-          if (statusTimer !== null) clearTimeout(statusTimer);
-          reject(error);
-        }
-      });
+    };
+    const follow = (pending: Promise<() => void>) => {
+      pending
+        .then((unsub) => {
+          unsubscribe = unsub;
+          if (settled) unsub();
+        })
+        .catch((error: unknown) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(signTimer);
+            if (statusTimer !== null) clearTimeout(statusTimer);
+            reject(error);
+          }
+        });
+    };
+    const moved = {
+      status: "ambiguous" as const,
+      error: "The chain moved while the wallet was open. The signature was not submitted, so no fee was charged.",
+    };
+    if (revalidate) {
+      if (!tx.signAsync) {
+        finish({
+          status: "ambiguous",
+          error: "This call cannot be signed without submitting it, so nothing was sent.",
+        });
+        return;
+      }
+      tx.signAsync(address, { signer })
+        .then(async (signed) => {
+          if (settled) return;
+          let ok = false;
+          try {
+            ok = await revalidate();
+          } catch {
+            ok = false;
+          }
+          if (!ok || settled) {
+            if (!settled) finish(moved);
+            return;
+          }
+          follow(signed.send(handle));
+        })
+        .catch((error: unknown) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(signTimer);
+            if (statusTimer !== null) clearTimeout(statusTimer);
+            reject(error);
+          }
+        });
+      return;
+    }
+    follow(tx.signAndSend(address, { signer }, handle));
   });
 }
 
