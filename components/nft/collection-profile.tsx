@@ -8,6 +8,8 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
+import { planck } from "@/lib/balance";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { errorText, formatUnits } from "@/lib/format";
 import {
   COLLECTION_ROLE,
@@ -311,14 +313,21 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
     }
     setBusy(true);
     const id = crypto.randomUUID();
-    txs.push({ id, label: `Mint item ${nextItem}`, status: "signing" });
     try {
+      const price = profile.price === null ? 0n : planck(profile.price);
+      const tx = buildMintItem(api, Number(profile.id), nextItem, destination, profile.price);
+      const review = await reviewExtrinsic(api, tx, signer.address, [price]);
+      if (!review.ok) {
+        setMessage(review.message);
+        return;
+      }
+      txs.push({ id, label: `Mint item ${nextItem}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       const result = await signAndSend(
         api,
-        buildMintItem(api, Number(profile.id), nextItem, destination, profile.price),
+        review.tx,
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),

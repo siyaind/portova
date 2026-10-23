@@ -1,6 +1,9 @@
 import type { ApiPromise } from "@polkadot/api";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { lpTokenFromPoolValue, parsePoolKey } from "@/lib/pool-key";
+import { readPositionAtFinalizedBlock, type PoolPosition } from "@/lib/pool-position";
+
+export type { PoolPosition };
 
 export type AssetRef = { kind: "native" } | { kind: "asset"; id: string };
 
@@ -76,6 +79,29 @@ export function readPoolConstants(api: ApiPromise): PoolConstants | null {
   };
 }
 
+export async function readPoolPosition(
+  api: ApiPromise,
+  asset1: AssetRef,
+  asset2: AssetRef,
+  lpToken: string,
+): Promise<PoolPosition> {
+  return readPositionAtFinalizedBlock({
+    finalizedHash: async () => {
+      const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The finalized block hash could not be read.");
+      return hash;
+    },
+    readAt: async (blockHash) => {
+      const at = (await api.at(blockHash)) as ApiPromise;
+      const [reserves, lpSupply] = await Promise.all([
+        readReserves(at, asset1, asset2),
+        readLpSupply(at, lpToken),
+      ]);
+      return { reserve1: reserves[0], reserve2: reserves[1], lpSupply };
+    },
+  });
+}
+
 export async function readReserves(
   api: ApiPromise,
   asset1: AssetRef,
@@ -139,8 +165,10 @@ export async function quoteExactIn(
   assetIn: AssetRef,
   assetOut: AssetRef,
   amountIn: bigint,
+  blockHash?: string,
 ): Promise<string | null> {
-  const quoted = (await api.call.assetConversionApi.quotePriceExactTokensForTokens(
+  const source = blockHash ? ((await api.at(blockHash)) as ApiPromise) : api;
+  const quoted = (await source.call.assetConversionApi.quotePriceExactTokensForTokens(
     encodeAsset(assetIn),
     encodeAsset(assetOut),
     amountIn,
@@ -169,13 +197,15 @@ export async function missingLpAccountDeposit(
   api: ApiPromise,
   lpToken: string,
   address: string,
+  blockHash?: string,
 ): Promise<bigint | null> {
   const consts = api.consts.poolAssets as unknown as {
     assetAccountDeposit?: { toString?: () => string };
   };
   const depositText = consts.assetAccountDeposit?.toString?.()?.replace(/,/g, "") ?? "";
   if (!/^\d+$/.test(depositText)) return null;
-  const stored = (await api.query.poolAssets.account(lpToken, address)) as unknown as { isNone?: boolean };
+  const source = blockHash ? ((await api.at(blockHash)) as ApiPromise) : api;
+  const stored = (await source.query.poolAssets.account(lpToken, address)) as unknown as { isNone?: boolean };
   if (typeof stored.isNone !== "boolean") return null;
   return stored.isNone ? BigInt(depositText) : BigInt(0);
 }

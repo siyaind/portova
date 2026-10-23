@@ -17,6 +17,22 @@ export function keptAliveSpendable(input: {
   return freeRaw > hold ? (freeRaw - hold).toString() : "0";
 }
 
+export function planck(value: string | null | undefined): bigint | null {
+  if (value == null) return null;
+  const text = value.replace(/,/g, "");
+  return /^\d+$/.test(text) ? BigInt(text) : null;
+}
+
+export function largestFrozenBalance(values: Array<string | null | undefined>): bigint | null {
+  let max: bigint | null = null;
+  for (const value of values) {
+    const next = planck(value);
+    if (next === null) continue;
+    if (max === null || next > max) max = next;
+  }
+  return max;
+}
+
 function plainDigits(value: string | null): string | null {
   if (!value) return null;
   const text = value.replace(/,/g, "");

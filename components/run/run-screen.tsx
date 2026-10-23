@@ -11,21 +11,26 @@ import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import {
   assetIdTaken,
   buildCreateMintTx,
+  metadataDeposit,
   readAssetConstants,
   signAndSend,
   type TxUpdate,
 } from "@/lib/assets";
+import { planck } from "@/lib/balance";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { readTradingEnabled } from "@/lib/market";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import {
   buildCollectionMintTx,
+  byteDeposit,
   createdCollectionUpdate,
   predictCollectionId,
   readNftConstants,
 } from "@/lib/nfts";
-import { applySlippage, assetDecimals, buildAddLiquidity, buildCreatePool, buildSwapExactIn, quoteExactIn, readPoolConstants, readPools, sameAsset, type AssetRef, type PoolView } from "@/lib/pools";
+import { applySlippage, assetDecimals, buildAddLiquidity, buildCreatePool, buildSwapExactIn, missingLpAccountDeposit, quoteExactIn, readPoolConstants, readPoolPosition, readPools, sameAsset, type AssetRef, type PoolView } from "@/lib/pools";
 import { optimalDeposit } from "@/lib/liquidity-math";
+import { sameFacts } from "@/lib/pool-position";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { parseRun, rememberEvidence, type RunEvidence, type RunStepName } from "@/lib/testnet-run";
 import { outcomeWithoutHash, txResultMessage, type TxStatus } from "@/lib/tx-result";
 
@@ -98,8 +103,13 @@ export function RunScreen() {
 
   async function sign(
     label: string,
-    build: (api: NonNullable<ReturnType<typeof chain.getApi>>) => Parameters<typeof signAndSend>[1],
+    tx: Parameters<typeof signAndSend>[1] & {
+      paymentInfo: (payer: string) => Promise<{ partialFee: { toString(): string } }>;
+    },
+    nativeDebits: Array<bigint | null>,
     decorate?: Parameters<typeof signAndSend>[5],
+    blockHash?: string,
+    stillCurrent?: () => Promise<boolean>,
   ): Promise<TxUpdate | null> {
     if (!signer) {
       await wallet.connect();
@@ -111,6 +121,22 @@ export function RunScreen() {
       setNotice("The testnet connection is unavailable.");
       return null;
     }
+    const review = await reviewExtrinsic(api, tx, signer.address, nativeDebits, blockHash);
+    if (!review.ok) {
+      setNotice(review.message);
+      return null;
+    }
+    if (stillCurrent) {
+      try {
+        if (!(await stillCurrent())) {
+          setNotice("The chain moved after the fee check. Nothing was submitted.");
+          return null;
+        }
+      } catch (cause) {
+        setNotice(errorText(cause));
+        return null;
+      }
+    }
     busyRef.current = true;
     setBusy(label);
     const id = crypto.randomUUID();
@@ -119,7 +145,7 @@ export function RunScreen() {
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
-      return await signAndSend(api, build(api), signer.address, injected.signer, (update) => txs.patch(id, update), decorate);
+      return await signAndSend(api, review.tx, signer.address, injected.signer, (update) => txs.patch(id, update), decorate);
     } catch (cause) {
       const text = errorText(cause);
       const failed = outcomeWithoutHash(text);
@@ -154,18 +180,21 @@ export function RunScreen() {
       setNotice(`Asset id ${id} is already on chain. Choose another id.`);
       return;
     }
-    const result = await sign(`Create asset ${id}`, (next) =>
-      buildCreateMintTx(next, {
-        id,
-        admin: signer.address,
-        minBalance,
-        name: tokenName.trim(),
-        symbol: tokenSymbol.trim(),
-        decimals: 18,
-        beneficiary: signer.address,
-        supply,
-      }),
-    );
+    const tx = buildCreateMintTx(api, {
+      id,
+      admin: signer.address,
+      minBalance,
+      name: tokenName.trim(),
+      symbol: tokenSymbol.trim(),
+      decimals: 18,
+      beneficiary: signer.address,
+      supply,
+    });
+    const result = await sign(`Create asset ${id}`, tx, [
+      planck(constants.assetDeposit),
+      metadataDeposit(constants, tokenName.trim(), tokenSymbol.trim()),
+      planck(constants.assetAccountDeposit),
+    ]);
     if (!result) return;
     record("token", `Create asset ${id}`, result, result.status === "finalized" ? String(id) : undefined);
     if (result.status === "finalized" || result.status === "included") await chain.refreshAssets().catch(() => undefined);
@@ -189,22 +218,30 @@ export function RunScreen() {
       return;
     }
     setCollectionId(String(predicted));
+    const itemMetadata = "ipfs://portova/run-item";
+    const tx = buildCollectionMintTx(api, {
+      admin: signer.address,
+      collectionId: predicted,
+      transferable: true,
+      metadataEditable: false,
+      maxSupply: 1,
+      publicMint: false,
+      price: null,
+      collectionMetadata: collectionUri.trim(),
+      itemMetadata,
+      itemId: 0,
+      mintTo: signer.address,
+    });
     const result = await sign(
       `Create collection ${predicted}`,
-      (next) =>
-        buildCollectionMintTx(next, {
-          admin: signer.address,
-          collectionId: predicted,
-          transferable: true,
-          metadataEditable: false,
-          maxSupply: 1,
-          publicMint: false,
-          price: null,
-          collectionMetadata: collectionUri.trim(),
-          itemMetadata: "ipfs://portova/run-item",
-          itemId: 0,
-          mintTo: signer.address,
-        }),
+      tx,
+      [
+        planck(constants.collectionDeposit),
+        planck(constants.itemDeposit),
+        byteDeposit(constants, collectionUri.trim()),
+        byteDeposit(constants, itemMetadata),
+        0n,
+      ],
       createdCollectionUpdate,
     );
     if (!result) return;
@@ -223,7 +260,15 @@ export function RunScreen() {
     const left: AssetRef = { kind: "native" };
     const right: AssetRef = { kind: "asset", id: assetId };
     if (sameAsset(left, right)) return;
-    const result = await sign(`Create pool ${NATIVE_SYMBOL}/${assetId}`, (api) => buildCreatePool(api, left, right));
+    const api = chain.getApi();
+    if (!api) {
+      setNotice("The testnet connection is unavailable.");
+      return;
+    }
+    const poolConstants = readPoolConstants(api);
+    const setup = poolConstants && /native/i.test(poolConstants.poolSetupFeeAsset) ? planck(poolConstants.poolSetupFee) : null;
+    const tx = buildCreatePool(api, left, right);
+    const result = await sign(`Create pool ${NATIVE_SYMBOL}/${assetId}`, tx, [setup]);
     if (!result) return;
     record("pool", `Create pool ${NATIVE_SYMBOL}/${assetId}`, result);
     if (result.status === "finalized" || result.status === "included") {
@@ -253,8 +298,14 @@ export function RunScreen() {
       setNotice("Enter liquidity amounts before signing.");
       return;
     }
-    const reserve1 = pool.reserve1 && /^\d+$/.test(pool.reserve1) ? BigInt(pool.reserve1) : null;
-    const reserve2 = pool.reserve2 && /^\d+$/.test(pool.reserve2) ? BigInt(pool.reserve2) : null;
+    const api = chain.getApi();
+    if (!api) {
+      setNotice("The testnet connection is unavailable.");
+      return;
+    }
+    const position = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
+    const reserve1 = position.reserve1 && /^\d+$/.test(position.reserve1) ? BigInt(position.reserve1) : null;
+    const reserve2 = position.reserve2 && /^\d+$/.test(position.reserve2) ? BigInt(position.reserve2) : null;
     const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
     const min1 = deposit ? applySlippage(deposit.amount1, "0.5") : null;
     const min2 = deposit ? applySlippage(deposit.amount2, "0.5") : null;
@@ -262,8 +313,22 @@ export function RunScreen() {
       setNotice("The reserve ratio does not produce a deposit above zero, so nothing was signed.");
       return;
     }
-    const result = await sign(`Add liquidity LP ${pool.lpToken}`, (api) =>
-      buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address),
+    const nativeIn = pool.asset1.kind === "native" ? deposit.amount1 : pool.asset2.kind === "native" ? deposit.amount2 : 0n;
+    const lpDeposit = await missingLpAccountDeposit(api, pool.lpToken, signer.address, position.blockHash);
+    const tx = buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address);
+    const result = await sign(
+      `Add liquidity LP ${pool.lpToken}`,
+      tx,
+      [nativeIn, lpDeposit],
+      undefined,
+      position.blockHash,
+      async () => {
+        const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
+        return sameFacts(
+          [position.reserve1, position.reserve2, position.lpSupply],
+          [next.reserve1, next.reserve2, next.lpSupply],
+        );
+      },
     );
     if (!result) return;
     record("liquidity", `Add liquidity LP ${pool.lpToken}`, result, result.status === "finalized" ? pool.lpToken : undefined);
@@ -289,10 +354,24 @@ export function RunScreen() {
     setBusy("Sign swap");
     const id = crypto.randomUUID();
     try {
-      const fresh = await quoteExactIn(api, pay, receive, amount);
+      const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The finalized block hash could not be read.");
+      const fresh = await quoteExactIn(api, pay, receive, amount, hash);
       const minimum = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), "0.5") : null;
-      if (!minimum || minimum <= BigInt(0)) {
+      if (!fresh || !minimum || minimum <= BigInt(0)) {
         setNotice("The node did not return a quote for this amount, so nothing was signed.");
+        return;
+      }
+      const tx = buildSwapExactIn(api, pay, receive, amount, minimum, signer.address);
+      const review = await reviewExtrinsic(api, tx, signer.address, [amount], hash);
+      if (!review.ok) {
+        setNotice(review.message);
+        return;
+      }
+      const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      const again = /^0x[0-9a-fA-F]{64}$/.test(againHash) ? await quoteExactIn(api, pay, receive, amount, againHash) : null;
+      if (!sameFacts([fresh], [again])) {
+        setNotice("The quote changed after the fee check. Nothing was submitted.");
         return;
       }
       txs.push({ id, label: `Swap ${NATIVE_SYMBOL}`, status: "signing" });
@@ -301,7 +380,7 @@ export function RunScreen() {
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       const result = await signAndSend(
         api,
-        buildSwapExactIn(api, pay, receive, amount, minimum, signer.address),
+        review.tx,
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),

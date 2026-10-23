@@ -8,8 +8,11 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
+import { readAssetMinBalance } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
-import { swapQuoteKey } from "@/lib/liquidity-math";
+import { assetRemainder, swapQuoteKey } from "@/lib/liquidity-math";
+import { sameFacts } from "@/lib/pool-position";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import {
   applySlippage,
@@ -113,12 +116,51 @@ export function SwapScreen() {
     setBusy(true);
     let tracked: string | null = null;
     try {
-      const fresh = await quoteExactIn(api, assetIn, assetOut, amountIn);
+      const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The finalized block hash could not be read.");
+      const fresh = await quoteExactIn(api, assetIn, assetOut, amountIn, hash);
       const freshMin = fresh && /^\d+$/.test(fresh) ? applySlippage(BigInt(fresh), slippage) : null;
-      if (!freshMin || freshMin <= BigInt(0)) {
+      if (!fresh || !freshMin || freshMin <= BigInt(0)) {
         setQuote(null);
         setQuoteState("none");
         setMessage("The node did not return a quote for this amount, so nothing was signed.");
+        return;
+      }
+      if (assetIn.kind === "asset") {
+        const at = await api.at(hash);
+        const stored = (await at.query.assets.account(assetIn.id, signer.address)) as unknown as {
+          isNone?: boolean;
+          unwrap?: () => { balance?: { toString(): string } };
+        };
+        const balanceText = stored.isNone ? "0" : stored.unwrap?.().balance?.toString().replace(/,/g, "") ?? "";
+        const balance = /^\d+$/.test(balanceText) ? BigInt(balanceText) : null;
+        const minBalance = await readAssetMinBalance(api, assetIn.id, hash);
+        if (balance === null || minBalance === null) {
+          setMessage("The asset balance or minimum balance could not be read, so the wallet was not opened.");
+          return;
+        }
+        const remainder = assetRemainder(balance, amountIn, minBalance);
+        if (remainder === "short") {
+          setMessage("The asset balance does not cover this swap, so the wallet was not opened.");
+          return;
+        }
+        if (remainder === "dust") {
+          setMessage("This swap would leave the asset below its minimum balance. The wallet was not opened.");
+          return;
+        }
+      }
+      const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, freshMin, signer.address);
+      const review = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n], hash);
+      if (!review.ok) {
+        setMessage(review.message);
+        return;
+      }
+      const againHash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      const again = /^0x[0-9a-fA-F]{64}$/.test(againHash)
+        ? await quoteExactIn(api, assetIn, assetOut, amountIn, againHash)
+        : null;
+      if (!sameFacts([fresh], [again])) {
+        setMessage("The quote changed after the fee check. Nothing was submitted.");
         return;
       }
       tracked = crypto.randomUUID();
@@ -126,8 +168,7 @@ export function SwapScreen() {
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
-      const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, freshMin, signer.address);
-      const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => {
+      const result = await signAndSend(api, review.tx, signer.address, injected.signer, (update) => {
         if (tracked) txs.patch(tracked, update);
       });
       if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
