@@ -17,7 +17,9 @@ import {
 } from "@/lib/assets";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { outcomeWithoutHash, signingLabel, txResultMessage, type TxStatus } from "@/lib/tx-result";
+import { planck } from "@/lib/balance";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { isProceedsAddress } from "@/lib/project";
 
 const FIELD =
@@ -199,6 +201,17 @@ export function CreateTokenForm() {
         setSubmitPhase(null);
         return;
       }
+      const tx = buildCreateMintTx(api, params);
+      const review = await reviewExtrinsic(api, tx, signer.address, [
+        planck(constants.assetDeposit),
+        metadataDeposit(constants, params.name, params.symbol),
+        planck(constants.assetAccountDeposit),
+      ]);
+      if (!review.ok) {
+        setFormError(review.message);
+        setSubmitPhase(null);
+        return;
+      }
       const id = crypto.randomUUID();
       tracked = id;
       txs.push({
@@ -211,8 +224,7 @@ export function CreateTokenForm() {
       if (!injected.signer) {
         throw new Error("This wallet did not provide a signer.");
       }
-      const tx = buildCreateMintTx(api, params);
-      const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => {
+      const result = await signAndSend(api, review.tx, signer.address, injected.signer, (update) => {
         setSubmitPhase(update.status);
         txs.patch(id, update);
       });

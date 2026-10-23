@@ -19,7 +19,9 @@ import {
   type CollectionMintParams,
   type NftConstants,
 } from "@/lib/nfts";
+import { planck } from "@/lib/balance";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { isProceedsAddress } from "@/lib/project";
 
 const FIELD =
@@ -204,7 +206,7 @@ export function CreateCollectionForm() {
       return;
     }
     const api = chain.getApi();
-    if (!api) return;
+    if (!api || !constants) return;
     const signed = {
       ...params,
       admin: signer.address,
@@ -226,16 +228,28 @@ export function CreateCollectionForm() {
         setSubmitPhase(null);
         return;
       }
+      const tx = buildCollectionMintTx(api, signed);
+      const review = await reviewExtrinsic(api, tx, signer.address, [
+        planck(constants.collectionDeposit),
+        planck(constants.itemDeposit),
+        byteDeposit(constants, signed.collectionMetadata),
+        signed.itemMetadata ? byteDeposit(constants, signed.itemMetadata) : 0n,
+        signed.price ?? 0n,
+      ]);
+      if (!review.ok) {
+        setFormError(review.message);
+        setSubmitPhase(null);
+        return;
+      }
       const id = crypto.randomUUID();
       tracked = id;
       txs.push({ id, label: `Create collection ${signed.collectionId}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
-      const tx = buildCollectionMintTx(api, signed);
       const result = await signAndSend(
         api,
-        tx,
+        review.tx,
         signer.address,
         injected.signer,
         (update) => {

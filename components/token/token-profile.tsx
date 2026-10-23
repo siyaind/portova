@@ -6,7 +6,9 @@ import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
-import { buildAssetMint, signAndSend } from "@/lib/assets";
+import { buildAssetMint, readAssetConstants, signAndSend } from "@/lib/assets";
+import { planck } from "@/lib/balance";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
@@ -179,14 +181,29 @@ function MintMore({ profile }: { profile: AssetProfile }) {
     }
     setBusy(true);
     const id = crypto.randomUUID();
-    txs.push({ id, label: `Mint asset ${profile.id}`, status: "signing" });
     try {
+      const constants = readAssetConstants(api);
+      const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      if (!constants || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+        setMessage("The asset deposit or finalized block could not be read, so the wallet was not opened.");
+        return;
+      }
+      const at = await api.at(hash);
+      const stored = (await at.query.assets.account(profile.id, destination)) as unknown as { isNone?: boolean };
+      const accountDeposit = stored.isNone ? planck(constants.assetAccountDeposit) : 0n;
+      const tx = buildAssetMint(api, Number(profile.id), destination, raw);
+      const review = await reviewExtrinsic(api, tx, signer.address, [accountDeposit], hash);
+      if (!review.ok) {
+        setMessage(review.message);
+        return;
+      }
+      txs.push({ id, label: `Mint asset ${profile.id}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       const result = await signAndSend(
         api,
-        buildAssetMint(api, Number(profile.id), destination, raw),
+        review.tx,
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),

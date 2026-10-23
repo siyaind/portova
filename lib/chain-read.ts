@@ -160,8 +160,9 @@ export async function readAssets(api: ApiPromise): Promise<AssetRow[]> {
   return rows.sort((a, b) => Number(a.id) - Number(b.id));
 }
 
-export async function readAssetMinBalance(api: ApiPromise, id: string): Promise<bigint | null> {
-  const stored = await api.query.assets.asset(id);
+export async function readAssetMinBalance(api: ApiPromise, id: string, blockHash?: string): Promise<bigint | null> {
+  const source = blockHash ? ((await api.at(blockHash)) as ApiPromise) : api;
+  const stored = await source.query.assets.asset(id);
   const optional = stored as unknown as {
     isNone?: boolean;
     unwrap?: () => { minBalance?: { toString(): string } };

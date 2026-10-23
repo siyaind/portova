@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChain } from "@/components/chain/chain-provider";
+import { planck } from "@/lib/balance";
 import { readAssetMinBalance } from "@/lib/chain-read";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
-import { assetRemainder, callNativeCost, optimalDeposit, pairedAmount, removalMinimum } from "@/lib/liquidity-math";
+import { assetRemainder, optimalDeposit, pairedAmount, removalMinimum } from "@/lib/liquidity-math";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
@@ -21,9 +22,8 @@ import {
   poolLabel,
   missingLpAccountDeposit,
   readLpBalance,
-  readLpSupply,
   readPoolConstants,
-  readReserves,
+  readPoolPosition,
   reservesUsable,
   sameAsset,
   type AssetRef,
@@ -31,6 +31,8 @@ import {
   type PoolView,
 } from "@/lib/pools";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
+import { sameFacts } from "@/lib/pool-position";
+import { reviewExtrinsic } from "@/lib/preflight";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink";
@@ -100,12 +102,17 @@ export function LiquidityScreen() {
     setAddMessage(null);
   }, [signer?.address]);
 
-  async function sign(
-    label: string,
-    build: (api: NonNullable<ReturnType<typeof chain.getApi>>) => ReturnType<typeof buildCreatePool>,
-    refresh = true,
-    place: "add" | "other" = "other",
-  ) {
+  async function sign(input: {
+    label: string;
+    tx: ReturnType<typeof buildCreatePool>;
+    nativeDebits: Array<bigint | null>;
+    refresh?: boolean;
+    place?: "add" | "other";
+    blockHash?: string;
+    stillCurrent?: () => Promise<boolean>;
+  }) {
+    const refresh = input.refresh ?? true;
+    const place = input.place ?? "other";
     const report = place === "add" ? setAddMessage : setMessage;
     report(null);
     if (!signer) {
@@ -114,11 +121,27 @@ export function LiquidityScreen() {
     }
     const api = chain.getApi();
     if (!api) return;
+    const review = await reviewExtrinsic(api, input.tx, signer.address, input.nativeDebits, input.blockHash);
+    if (!review.ok) {
+      report(review.message);
+      return;
+    }
+    if (input.stillCurrent) {
+      try {
+        if (!(await input.stillCurrent())) {
+          report("The chain moved after the fee check. Nothing was submitted.");
+          return;
+        }
+      } catch (cause) {
+        report(errorText(cause));
+        return;
+      }
+    }
     const id = crypto.randomUUID();
-    setBusy(label);
-    txs.push({ id, label, status: "signing" });
+    setBusy(input.label);
+    txs.push({ id, label: input.label, status: "signing" });
     try {
-      const result = await signAndSend(api, build(api), signer.address, (await injectedSigner(signer.source)).signer, (update) =>
+      const result = await signAndSend(api, review.tx, signer.address, (await injectedSigner(signer.source)).signer, (update) =>
         txs.patch(id, update),
       );
       if (result.status === "finalized" || result.status === "included") {
@@ -191,9 +214,7 @@ export function LiquidityScreen() {
           <button
             type="button"
             disabled={Boolean(busy) || chain.status !== "live" || sameAsset(left, right)}
-            onClick={() =>
-              void sign(`Create pool`, (api) => buildCreatePool(api, left, right))
-            }
+            onClick={() => void submitCreate()}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "Create pool" ? "Waiting for the wallet…" : signer ? "Create pool" : "Connect Substrate wallet"}
@@ -279,6 +300,23 @@ export function LiquidityScreen() {
     </div>
   );
 
+  async function submitCreate() {
+    if (!signer) {
+      await wallet.connect();
+      return;
+    }
+    const api = chain.getApi();
+    if (!api || !constants || !/native/i.test(constants.poolSetupFeeAsset)) {
+      setMessage("The pool setup fee could not be read as a native deposit, so the wallet was not opened.");
+      return;
+    }
+    await sign({
+      label: "Create pool",
+      tx: buildCreatePool(api, left, right),
+      nativeDebits: [planck(constants.poolSetupFee)],
+    });
+  }
+
   async function submitAdd() {
     if (!pool || !signer) {
       await wallet.connect();
@@ -307,16 +345,15 @@ export function LiquidityScreen() {
       setAddMessage("The testnet connection is unavailable, so the wallet was not opened.");
       return;
     }
-    let fresh1: string | null = null;
-    let fresh2: string | null = null;
+    let position;
     try {
-      [fresh1, fresh2] = await readReserves(api, pool.asset1, pool.asset2);
+      position = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
     } catch (cause) {
       setAddMessage(errorText(cause));
       return;
     }
-    const reserve1 = fresh1 && /^\d+$/.test(fresh1.replace(/,/g, "")) ? BigInt(fresh1.replace(/,/g, "")) : null;
-    const reserve2 = fresh2 && /^\d+$/.test(fresh2.replace(/,/g, "")) ? BigInt(fresh2.replace(/,/g, "")) : null;
+    const reserve1 = position.reserve1 && /^\d+$/.test(position.reserve1.replace(/,/g, "")) ? BigInt(position.reserve1.replace(/,/g, "")) : null;
+    const reserve2 = position.reserve2 && /^\d+$/.test(position.reserve2.replace(/,/g, "")) ? BigInt(position.reserve2.replace(/,/g, "")) : null;
     const deposit = optimalDeposit(desired1, desired2, reserve1, reserve2);
     const min1 = deposit ? applySlippage(deposit.amount1, slippage) : null;
     const min2 = deposit ? applySlippage(deposit.amount2, slippage) : null;
@@ -325,35 +362,12 @@ export function LiquidityScreen() {
       return;
     }
     const nativeIn = pool.asset1.kind === "native" ? deposit.amount1 : pool.asset2.kind === "native" ? deposit.amount2 : BigInt(0);
-    let fee: bigint | null = null;
+    const spendable = BigInt(spendableText);
     let lpDeposit: bigint | null = null;
     try {
-      const info = await buildAddLiquidity(
-        api,
-        pool,
-        deposit.amount1,
-        deposit.amount2,
-        min1,
-        min2,
-        signer.address,
-      ).paymentInfo(signer.address);
-      const feeText = info.partialFee.toString().replace(/,/g, "");
-      fee = /^\d+$/.test(feeText) ? BigInt(feeText) : null;
-      lpDeposit = await missingLpAccountDeposit(api, pool.lpToken, signer.address);
+      lpDeposit = await missingLpAccountDeposit(api, pool.lpToken, signer.address, position.blockHash);
     } catch (cause) {
       setAddMessage(errorText(cause));
-      return;
-    }
-    const cost = callNativeCost([nativeIn, fee, lpDeposit]);
-    if (cost === null || fee === null || lpDeposit === null) {
-      setAddMessage("The fee or the pool-asset account deposit could not be read, so the wallet was not opened.");
-      return;
-    }
-    const spendable = BigInt(spendableText);
-    if (cost > spendable) {
-      setAddMessage(
-        `This account can spend ${formatUnits(spendableText, NATIVE_DECIMALS)} ${NATIVE_SYMBOL} after frozen funds and the existential deposit. This deposit needs ${formatUnits(cost.toString(), NATIVE_DECIMALS)} ${NATIVE_SYMBOL} for the native amount, the fee, and any new pool-asset account. The wallet was not opened.`,
-      );
       return;
     }
     const assetSides: Array<{ id: string; amount: bigint; decimals: number; name: string }> = [];
@@ -378,7 +392,7 @@ export function LiquidityScreen() {
       const have = assetBalance({ kind: "asset", id: side.id }, spendable, snapshot.holdings);
       let minBalance: bigint | null = null;
       try {
-        minBalance = await readAssetMinBalance(api, side.id);
+        minBalance = await readAssetMinBalance(api, side.id, position.blockHash);
       } catch (cause) {
         setAddMessage(errorText(cause));
         return;
@@ -399,13 +413,21 @@ export function LiquidityScreen() {
         return;
       }
     }
-    setAddMessage(null);
-    await sign(
-      "Add liquidity",
-      (api) => buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address),
-      true,
-      "add",
-    );
+    const tx = buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address);
+    await sign({
+      label: "Add liquidity",
+      tx,
+      nativeDebits: [nativeIn, lpDeposit],
+      place: "add",
+      blockHash: position.blockHash,
+      stillCurrent: async () => {
+        const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
+        return sameFacts(
+          [position.reserve1, position.reserve2, position.lpSupply],
+          [next.reserve1, next.reserve2, next.lpSupply],
+        );
+      },
+    });
   }
 
   async function submitRemove() {
@@ -422,27 +444,33 @@ export function LiquidityScreen() {
       setMessage("The testnet connection is unavailable, so the wallet was not opened.");
       return;
     }
-    let fresh1: string | null = null;
-    let fresh2: string | null = null;
-    let lpSupply: string | null = null;
+    let position;
     try {
-      [[fresh1, fresh2], lpSupply] = await Promise.all([
-        readReserves(api, pool.asset1, pool.asset2),
-        readLpSupply(api, pool.lpToken),
-      ]);
+      position = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
     } catch (cause) {
       setMessage(errorText(cause));
       return;
     }
-    const min1 = removalMinimum(fresh1, lpSupply, raw, slippage);
-    const min2 = removalMinimum(fresh2, lpSupply, raw, slippage);
+    const min1 = removalMinimum(position.reserve1, position.lpSupply, raw, slippage);
+    const min2 = removalMinimum(position.reserve2, position.lpSupply, raw, slippage);
     if (min1 === null || min2 === null) {
       setMessage("Reserves or LP supply are unavailable, so a minimum receive amount was not invented.");
       return;
     }
-    await sign("Remove liquidity", (api) =>
-      buildRemoveLiquidity(api, pool, raw, min1, min2, signer.address),
-    );
+    const tx = buildRemoveLiquidity(api, pool, raw, min1, min2, signer.address);
+    await sign({
+      label: "Remove liquidity",
+      tx,
+      nativeDebits: [0n],
+      blockHash: position.blockHash,
+      stillCurrent: async () => {
+        const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
+        return sameFacts(
+          [position.reserve1, position.reserve2, position.lpSupply],
+          [next.reserve1, next.reserve2, next.lpSupply],
+        );
+      },
+    });
   }
 
   function fillFromReserves(side: 1 | 2, text: string) {

@@ -8,6 +8,7 @@ import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
 import { signAndSend } from "@/lib/assets";
+import { reviewExtrinsic } from "@/lib/preflight";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
@@ -156,6 +157,9 @@ export function MarketScreen() {
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
       let tx;
       let label = "";
+      let debits: Array<bigint | null> = [0n];
+      let reviewedPrice: string | null = null;
+      let reviewedBuyer: string | null = null;
       if (kind === "buy") {
         if (current.owner === signer.address) {
           setMessage("The owner cannot buy their own item.");
@@ -177,6 +181,9 @@ export function MarketScreen() {
         }
         tx = buildBuyItem(api, collection, item, bidRaw);
         label = `Buy item ${collection}/${item}`;
+        debits = [bidRaw];
+        reviewedPrice = listed.price;
+        reviewedBuyer = listed.buyer;
       } else {
         if (current.owner !== signer.address) {
           setMessage("Only the item owner can set or clear the price.");
@@ -200,8 +207,20 @@ export function MarketScreen() {
           label = `List item ${collection}/${item}`;
         }
       }
+      const review = await reviewExtrinsic(api, tx, signer.address, debits);
+      if (!review.ok) {
+        setMessage(review.message);
+        return;
+      }
+      if (kind === "buy") {
+        const again = await readItemSale(api, String(collection), String(item));
+        if (!again.listed || again.price !== reviewedPrice || again.buyer !== reviewedBuyer) {
+          setMessage("The listing changed after the fee check. Nothing was submitted.");
+          return;
+        }
+      }
       txs.push({ id, label, status: "signing" });
-      const result = await signAndSend(api, tx, signer.address, injected.signer, (update) => txs.patch(id, update));
+      const result = await signAndSend(api, review.tx, signer.address, injected.signer, (update) => txs.patch(id, update));
       if (result.status === "finalized" || result.status === "included") await loadSale();
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
