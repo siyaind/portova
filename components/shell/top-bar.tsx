@@ -9,6 +9,7 @@ import { isExtrinsicHash, txStatusLabel, useTxs } from "@/components/tx/tx-track
 import { WalletDialog } from "@/components/wallet/wallet-dialog";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { CHAIN_ID } from "@/lib/network";
+import { receiptExplorerUrl } from "@/lib/explorer";
 import { shortAddress } from "@/lib/format";
 import { useConnection } from "wagmi";
 
@@ -104,7 +105,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
               </p>
             ) : (
               <ul className="mt-3 max-h-80 space-y-3 overflow-y-auto">
-                {txs.items.map((item) => (
+                {txs.items.slice(0, 20).map((item) => (
                   <li key={item.id} className="border-t border-line pt-3 first:border-0 first:pt-0">
                     <p className="text-sm">{item.label}</p>
                     <p className="mt-1 text-xs tracking-wide text-faint uppercase">
@@ -116,6 +117,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
                     {item.error ? (
                       <p className="mt-1 text-xs leading-5 text-warn">{item.error}</p>
                     ) : null}
+                    {item.hash && receiptExplorerUrl(item.hash) ? <a href={receiptExplorerUrl(item.hash)!} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-violet">Open in testnet explorer ↗</a> : null}
                     {item.collectionId ? (
                       <Link
                         href={`/collection/${item.collectionId}`}
@@ -128,6 +130,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
                 ))}
               </ul>
             )}
+            <Link href="/activity" onClick={() => setTxOpen(false)} className="mt-3 inline-block text-xs text-violet">All receipts & recovery</Link>
           </div>
         ) : null}
       </div>
@@ -144,6 +147,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
     {substrate.error && !walletOpen ? (
       <p className="border-b border-line bg-bg px-4 py-2 text-sm leading-6 text-warn">{substrate.error}</p>
     ) : null}
+    {txs.storageError ? <p role="alert" className="border-b border-line bg-bg px-4 py-2 text-xs leading-6 text-warn">{txs.storageError} <Link href="/activity" className="underline">Export receipts</Link></p> : null}
     </>
   );
 }

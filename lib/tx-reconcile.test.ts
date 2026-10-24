@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApiPromise } from "@polkadot/api";
-import { collectionIdForHash, dispatchOutcome, reconcileExtrinsic } from "./tx-reconcile.ts";
+import { collectionIdForHash, dispatchOutcome, reconcileExtrinsic, reconcileReceipt } from "./tx-reconcile.ts";
 
 const HASH = `0x${"ab".repeat(32)}`;
 
@@ -119,4 +119,44 @@ test("a hash outside the pool and recent blocks is not found", async () => {
     2,
   );
   assert.equal(found, "not-found");
+});
+
+function historyApi(target: number, pruned = false) {
+  return {
+    rpc: { author: { pendingExtrinsics: async () => { throw Error("disabled"); } }, chain: {
+      getFinalizedHead: async () => codec("1000"),
+      getHeader: async () => ({ number: { toNumber: () => 1000 } }),
+      getBlockHash: async (height: number) => codec(String(height)),
+      getBlock: async (value?: { toHex(): string } | string) => {
+        const height = value === undefined ? 1000 : Number(typeof value === "string" ? value : value.toHex());
+        return block(height, String(height - 1), height === target ? [HASH] : [], String(height));
+      },
+    } },
+    query: { system: { events: { at: async () => { if (pruned) throw Error("pruned"); return [successEvent(0)]; } } } },
+  } as unknown as ApiPromise;
+}
+
+test("persisted inclusion height recovers an old receipt despite disabled author RPC", async () => {
+  const found = await reconcileReceipt(historyApi(10), HASH, { blockNumber: 10 });
+  assert.equal(found.chain, "finalized");
+  assert.equal(found.blockNumber, 10);
+  assert.equal(found.extrinsicIndex, 0);
+});
+
+test("older block recovery advances across bounded pages and honors its lower boundary", async () => {
+  const api = historyApi(950);
+  const first = await reconcileReceipt(api, HASH, { fromBlock: 940, maxBlocks: 24 });
+  assert.equal(first.chain, "not-found");
+  assert.equal(first.nextCursor, 976);
+  const second = await reconcileReceipt(api, HASH, { fromBlock: 940, cursor: first.nextCursor, maxBlocks: 32 });
+  assert.equal(second.chain, "finalized");
+  assert.equal(second.blockNumber, 950);
+  assert.equal((await reconcileReceipt(api, HASH, { fromBlock: 980, maxBlocks: 64 })).nextCursor, undefined);
+});
+
+test("pruned events and a noncanonical hinted block never establish success", async () => {
+  assert.equal((await reconcileReceipt(historyApi(10, true), HASH, { blockNumber: 10 })).chain, "dispatch-unknown");
+  const api = historyApi(10);
+  api.rpc.chain.getBlockHash = (async () => codec("other")) as never;
+  assert.equal((await reconcileReceipt(api, HASH, { blockHash: "10", maxBlocks: 1 })).chain, "not-found");
 });

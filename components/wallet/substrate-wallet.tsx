@@ -39,6 +39,8 @@ export function SubstrateWalletProvider({
   const [selected, setSelected] = useState<SubstrateAccount | null>(null);
   const [error, setError] = useState<string | null>(null);
   const enableTask = useRef<Promise<unknown> | null>(null);
+  const generation = useRef(0);
+  const selectedRef = useRef(selected); selectedRef.current = selected;
 
   const connect = useCallback(async () => {
     if (enableTask.current) {
@@ -48,6 +50,7 @@ export function SubstrateWalletProvider({
     }
     setStatus("connecting");
     setError(null);
+    const ticket = ++generation.current;
     try {
       const { web3Enable, web3Accounts } = await import(
         "@polkadot/extension-dapp"
@@ -72,6 +75,7 @@ export function SubstrateWalletProvider({
           }, 8000);
         }),
       ]);
+      if (ticket !== generation.current) return;
       if (extensions.length === 0) {
         setAccounts([]);
         setSelected(null);
@@ -80,19 +84,21 @@ export function SubstrateWalletProvider({
         const extensionInstalled = Boolean(injected && Object.keys(injected).length > 0);
         setError(
           extensionInstalled
-            ? "A wallet request is still open. Close it in the extension, then choose Connect again."
+            ? "No wallet granted access. Approve account access in your extension, then choose Connect again."
             : "No wallet extension answered. Install Polkadot.js, Talisman, or SubWallet, then reload this page.",
         );
         return;
       }
       const injected = await web3Accounts();
+      if (ticket !== generation.current) return;
       const next = injected.map((account) => ({
         address: account.address,
         name: account.meta.name ?? "Account",
         source: account.meta.source ?? "extension",
       }));
       setAccounts(next);
-      const stored = window.sessionStorage.getItem("portova.substrate.selected");
+      let stored: string | null = null;
+      try { stored = window.sessionStorage.getItem("portova.substrate.selected"); } catch { /* Connection still works without browser persistence. */ }
       const chosen = next.find((account) => account.address === stored) ?? next[0] ?? null;
       setSelected(chosen);
       if (!chosen) {
@@ -100,10 +106,11 @@ export function SubstrateWalletProvider({
         setError("No account was chosen. Choose Connect again.");
         return;
       }
-      window.sessionStorage.setItem("portova.substrate.selected", chosen.address);
+      try { window.sessionStorage.setItem("portova.substrate.selected", chosen.address); } catch { /* Optional persistence. */ }
       setStatus("ready");
-      window.sessionStorage.setItem("portova.substrate.connected", "1");
+      try { window.sessionStorage.setItem("portova.substrate.connected", "1"); } catch { /* Optional persistence. */ }
     } catch (cause) {
+      if (ticket !== generation.current) return;
       setStatus("error");
       setError(errorText(cause));
     }
@@ -114,24 +121,46 @@ export function SubstrateWalletProvider({
       const match = accounts.find((account) => account.address === address);
       if (!match) return;
       setSelected(match);
-      window.sessionStorage.setItem("portova.substrate.selected", match.address);
+      try { window.sessionStorage.setItem("portova.substrate.selected", match.address); } catch { /* Optional persistence. */ }
     },
     [accounts],
   );
 
   const disconnect = useCallback(() => {
+    generation.current += 1;
     setAccounts([]);
     setSelected(null);
     setError(null);
     setStatus("idle");
-    window.sessionStorage.removeItem("portova.substrate.connected");
-    window.sessionStorage.removeItem("portova.substrate.selected");
+    try {
+      window.sessionStorage.removeItem("portova.substrate.connected");
+      window.sessionStorage.removeItem("portova.substrate.selected");
+    } catch { /* Disconnect still applies in memory. */ }
   }, []);
 
   useEffect(() => {
-    if (window.sessionStorage.getItem("portova.substrate.connected") !== "1") return;
+    try { if (window.sessionStorage.getItem("portova.substrate.connected") !== "1") return; } catch { return; }
     void connect();
   }, [connect]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void import("@polkadot/extension-dapp").then(async ({ web3AccountsSubscribe }) => {
+      const stop = await web3AccountsSubscribe((injected) => {
+        if (cancelled) return;
+        const next = injected.map((account) => ({ address: account.address, name: account.meta.name ?? "Account", source: account.meta.source ?? "extension" }));
+        setAccounts(next);
+        const previous = selectedRef.current;
+        const stillAllowed = next.find((account) => account.address === previous?.address && account.source === previous.source) ?? null;
+        setSelected(stillAllowed);
+        if (previous && !stillAllowed) setError("The selected account is no longer shared by the wallet. Select an authorized account before signing.");
+      });
+      if (cancelled) stop(); else unsubscribe = stop;
+    }).catch(() => { if (!cancelled) setError("Wallet account updates are unavailable. Reconnect before signing if permissions change."); });
+    return () => { cancelled = true; unsubscribe?.(); };
+  }, [status]);
 
   const value = useMemo(
     () => ({ status, accounts, selected, error, connect, select, disconnect }),

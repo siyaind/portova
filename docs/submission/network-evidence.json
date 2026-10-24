@@ -1,0 +1,36 @@
+{
+  "capturedAt": "2026-10-24T12:22:24.013Z",
+  "endpoint": "wss://test-node-v3.portaldot.dev",
+  "chain": "PortaldotV3 Test",
+  "genesisHash": "0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd",
+  "specName": "portaldot-v3",
+  "specVersion": 3002,
+  "finalizedBlock": 174536,
+  "finalizedHash": "0xbcfaeb0a0155326192bc06c6ba7e7cbf25407bad1fea1c3fe72a9d071fe52602",
+  "properties": {
+    "isEthereum": false,
+    "ss58Format": 42,
+    "tokenDecimals": [
+      14
+    ],
+    "tokenSymbol": [
+      "tPOT"
+    ]
+  },
+  "counts": {
+    "assets": 21,
+    "collections": 11,
+    "pools": 9
+  },
+  "nftFeatures": "0",
+  "historicalReceipt": {
+    "hash": "0xf60fcae4e346fc06e0e4164ffa37c0ea0494baa73c10b72c9a491b2dbeb86095",
+    "inclusionBlock": 159687,
+    "chain": "finalized",
+    "scanned": 0,
+    "blockHash": "0x3a78f11dcc1319fa792a2ada21f023b1ef411177f9233e324944ff040d96d231",
+    "blockNumber": 159687,
+    "extrinsicIndex": 1,
+    "explorer": "https://scanner-testnet-v3.portaldot.dev/#/extrinsics/0xf60fcae4e346fc06e0e4164ffa37c0ea0494baa73c10b72c9a491b2dbeb86095"
+  }
+}
