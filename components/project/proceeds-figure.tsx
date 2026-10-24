@@ -10,7 +10,7 @@ import { isProceedsAddress } from "@/lib/project";
 
 export type ProceedsStatus = "empty" | "invalid" | "waiting" | "reading" | "ready" | "unavailable";
 
-export function useProceedsBalance(address: string): {
+export function useProceedsBalance(address: string, revision = 0): {
   status: ProceedsStatus;
   free: string | null;
   holdings: HoldingRow[];
@@ -52,7 +52,7 @@ export function useProceedsBalance(address: string): {
     return () => {
       cancelled = true;
     };
-  }, [valid, trimmed, assetCount, chain.status, chain.readAccount]);
+  }, [valid, trimmed, assetCount, chain.status, chain.readAccount, revision]);
 
   const current = row?.address === trimmed ? row.snapshot : null;
   if (!trimmed) return { status: "empty", free: null, holdings: [], error: null, assetsPending: false };
@@ -82,8 +82,8 @@ export function useProceedsBalance(address: string): {
   return { status: "ready", free, holdings: current.holdings, error: null, assetsPending };
 }
 
-export function ProceedsFigure({ address }: { address: string }) {
-  return <ProceedsBody address={address} balance={useProceedsBalance(address)} />;
+export function ProceedsFigure({ address, revision = 0 }: { address: string; revision?: number }) {
+  return <ProceedsBody address={address} balance={useProceedsBalance(address, revision)} />;
 }
 
 export function ProceedsBody({

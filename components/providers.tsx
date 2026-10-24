@@ -16,11 +16,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={wagmiConfig} reconnectOnMount={false}>
       <QueryClientProvider client={queryClient}>
         <ChainProvider>
-          <TxProvider>
-            <SubstrateWalletProvider>
+          <SubstrateWalletProvider>
+            <TxProvider>
               <ProjectProvider>{children}</ProjectProvider>
-            </SubstrateWalletProvider>
-          </TxProvider>
+            </TxProvider>
+          </SubstrateWalletProvider>
         </ChainProvider>
       </QueryClientProvider>
     </WagmiProvider>

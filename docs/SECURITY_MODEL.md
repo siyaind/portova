@@ -1,86 +1,29 @@
-# PORTOVA security model
+# Security model
 
-Status: Phase 0. No contracts are deployed. This is not an audit.
+Updated October 24, 2026. This is an implementation description, not an audit.
 
-Date: 2026-10-19
+## Authority and network
 
-## Trust boundaries
+The user's injected wallet holds the key. Portova never requests a seed or private key. ChainProvider verifies the expected testnet genesis and runtime name before marking the connection live. The rollout does not silently switch users to mainnet. EVM addresses and native Substrate accounts remain distinct.
 
-| Actor | May do | Must not do |
-|---|---|---|
-| User wallet | Sign its own extrinsics and EVM transactions | Give a seed or private key to the app |
-| PORTOVA app | Build unsigned calls, display chain reads, store off-chain project text | Move funds, substitute a recipient, or mark a trade successful without a chain result |
-| Indexer, when it exists | Store events the node emitted | Invent balances, prices, or receipts |
-| Asset issuer / admin / freezer | Mint, burn, freeze, or change metadata while those roles remain | Be hidden. The token page lists the current accounts |
-| Collection owner | Change unlocked settings, withdraw only by an explicit transfer | Sweep buyers or redirect sale proceeds into a pool |
-| Sudo on testnet | Anything the runtime allows a root key to do | Be treated as a normal user. Real value does not go to this network |
-| Revive contract, later | Only the powers in its code | Custody assets without a withdrawal path the UI explains |
+Treasury permits only the linked proceeds authority to review a withdrawal. Canonical public-key comparison handles alternate SS58 encodings, while recipients must be valid prefix-42 addresses. The transfer keeps the sender alive. It cannot withdraw somebody else's funds or bypass chain permissions.
 
-The testnet `Sudo.Key` storage value is set. Spec version 3002 is a `3.0.0-dev` node build. Peers observed: 2, and `shouldHavePeers` is false. This network can be halted or rewritten by its operator. It is fit for a hackathon demonstration and unfit for savings.
+## Review and broadcast
 
-## Chain risks that are already visible
+Amounts use integer arithmetic and strict decimal/u128 parsing. Preflight reads finalized account state, frozen funds, existential deposit, deposits and guarded fees. Unknown or insufficient values stop before the wallet. Guards reduce avoidable failures; runtime dispatch can still fail.
 
-- Legacy mainnet and V3 testnet are different runtimes. A wallet pointed at `wss://mainnet.portaldot.io` is on node 2.0.0, spec 1002. The app must refuse any endpoint other than the two verified testnet URLs.
-- Native POT has 14 decimals and the on-chain symbol `tPOT`. An EVM wallet assumes 18 decimals unless Revive's ratio is proven. Showing the EVM balance as POT before that check would mis-state funds.
-- The guide states that an H160 derived for Portaldot is not the Ethereum address for the same key, and that native funding must go to the mapped SS58 account. There is no documented recovery for a mistaken transfer. The send screen has to show the mapped address and require the user to confirm it.
-- `eth_getLogs` and `eth_getTransactionReceipt` disagree for at least one historical hash. A log is not a receipt. The UI waits for an inclusion result from the client that submitted the transaction.
-- Historical EVM state on the public RPC is discarded. Analytics that need old state come from a Substrate indexer or they stay unavailable.
-- `AssetConversion` has no pools. A quote function must return "no pool" rather than a price.
-- Native NFT `buy_item` pays the seller in POT. It is not a fee-splitting marketplace. Building a fee into the UI without a contract would be a false charge.
-- No royalty field exists in the NFT metadata strings. A royalty line must not be shown as collected.
-- Issuer mint authority is an admin power. If the creator keeps it, the token page says the supply can increase. If they remove it, the page shows the role empty.
-- `IBridge` is not in this runtime. Any bridge button would be a false capability.
-- Ethereum contract patterns are not automatically safe on Revive. Upstream Revive notes include no 63/64 gas rule, tight memory and calldata limits, and different `create` semantics for PolkaVM. This runtime does serve Solidity bytecode, which suggests the EVM interpreter path is on. That still does not prove Uniswap-style contracts. No such port is in scope.
-- Storage deposits can lock POT. Fee and deposit estimates are shown when a dry-run returns them.
+Treasury requires a separate confirmation after review, with a 60-second limit. Network, sender, extension, project proceeds account, recipient and amount are checked across asynchronous wallet access. The exact reviewed call is signed, revalidated and then broadcast. Permission changes revoke the active selection. Disconnect invalidates late connection results. Double submission is blocked while an action is pending.
 
-## Rules for later contracts
+Swaps check a fresh runtime quote against the reviewed minimum, with a quote expiry. NFT Trading remains disabled unless the runtime explicitly enables it. Issuer and collection permissions remain runtime authorities, not frontend promises.
 
-Apply only if a phase actually adds a contract.
+## Receipt evidence
 
-- Own the minimal surface. Do not import an AMM.
-- Initialize once. No redeploy-over-state.
-- Access control on every admin call, with the admin visible in the app.
-- Reentrancy protection on every call that moves a token or NFT.
-- Checks-effects-interactions, and pallet or token return values checked.
-- Supply minted equals supply allocated. A claim cannot pay twice.
-- Deadlines and slippage on swaps, using the pallet's minimum-out arguments.
-- Marketplace buy checks the current owner and the current price, and cancels cleanly.
-- Treasury withdrawal goes to an address the creator just confirmed.
-- No upgrade proxy unless the UI says who can upgrade it.
-- Tests cover the accounting identities before any public testnet liquidity. An external review is required before mainnet. Mainnet is not in this program.
+Inclusion is not finality. A finalized label requires successful dispatch for this extrinsic index and canonical finality. Another extrinsic's success cannot confirm it. Unknown/no-hash outcomes remain Unknown and must be checked before retrying. Late callbacks cannot demote confirmed receipts.
 
-## Application rules now
+Recovery saves inclusion hints and bounded search checkpoints. RPC calls have time bounds. Pruned history is unverified. Imported JSON is size/schema/network checked, rendered as plain React text, and cannot confer successful status without rechecking the chain. Explorer paths accept validated identifiers only.
 
-- No private keys, seeds, or RPC credentials with write scope in the repository or docs.
-- No `.env` committed. A later local file may hold only public RPC URLs.
-- Wallet connections are read and sign. There is no backend signer.
-- Empty numbers stay empty. Loading and failure are different states.
-- Testnet and mainnet are labeled. Mainnet is absent until it is verified.
-- Submitted, included, and finalized are different labels.
-- Off-chain project text is labeled off-chain.
-- Dependencies stay limited to the framework, wallet libraries, and chain clients named in `docs/ARCHITECTURE.md`.
+## Storage and operational limits
 
-## Threats to test in later phases
+Projects and receipts are browser-local, not encrypted custody or a server archive. Export backups before clearing site data. Storage failure is surfaced with an export link. Portova operates no indexer, faucet or bridge. Public RPC availability and testnet administration remain external dependencies.
 
-- Wrong SS58 mapping drains a test transfer.
-- Decimal scaling shows a 10,000x POT balance.
-- Swap enabled with zero reserves.
-- Issuer mints after the UI said supply was fixed.
-- `buy_item` races a cancel.
-- Indexer gap displayed as a zero balance.
-- EVM receipt null displayed as success because a log once existed.
-- Project proceeds account differs from the account the creator watches.
-
-Phase 7 runs these against the testnet flows that were actually built. A phase that ships no contract still reconciles every extrinsic hash from the demo script.
-
-## Phase 7 result
-
-Date: 2026-10-19. No demo script submitted an extrinsic, so the hash list is empty. Details are in `docs/DEPLOYMENT.md`.
-
-- Native balances use 14 decimals from `System.Account`. An EVM native balance stays hidden and is not shown as tPOT.
-- Swap submit stays disabled while `AssetConversion.pools` is empty and the node returns no quote.
-- The token page says the issuer can mint more while that role is set. Supply is the current Assets record.
-- `buy_item` was not submitted. Trading is off, so the cancel race was not executed.
-- Activity labels indexed history and EVM receipts unavailable. A gap is not shown as zero.
-- Treasury reads the proceeds account on the local project. Withdrawal is not built, so the SS58-drain case was not executed as a transfer. The project form still rejects an address that fails the prefix 42 check.
-- A later signed hash stays in this browser. After reload the stored status is shown and is not queried again.
+Automated wallet tests use fake adapters and execute the actual submission helper. Read-only evidence capture queries the public chain. No human extension signature or new treasury transfer was executed in this update. See [QA](submission/QA.md) for the remaining manual checks.

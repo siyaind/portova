@@ -1,8 +1,8 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { Signer } from "@polkadot/types/types";
-import { plainChainError } from "@/lib/chain-error";
-import { collectionIdForHash, reconcileExtrinsic } from "@/lib/tx-reconcile";
-import { extrinsicDispatch, outcomeAfterWait } from "@/lib/tx-result";
+import { plainChainError } from "./chain-error.ts";
+import { collectionIdForHash, reconcileExtrinsic } from "./tx-reconcile.ts";
+import { extrinsicDispatch, outcomeAfterWait } from "./tx-result.ts";
 
 export type AssetConstants = {
   assetDeposit: string;
@@ -30,6 +30,8 @@ export type TxUpdate = {
   hash?: string;
   error?: string;
   collectionId?: string;
+  blockHash?: string;
+  extrinsicIndex?: number;
 };
 
 type ChainEvent = {
@@ -132,6 +134,8 @@ export async function signAndSend(
           isInvalid: boolean;
           isUsurped: boolean;
           type: string;
+          asInBlock?: { toHex(): string };
+          asFinalized?: { toHex(): string };
         };
         events?: ChainEvent[];
       }) => void,
@@ -154,6 +158,8 @@ export async function signAndSend(
             isInvalid: boolean;
             isUsurped: boolean;
             type: string;
+            asInBlock?: { toHex(): string };
+            asFinalized?: { toHex(): string };
           };
           events?: ChainEvent[];
         }) => void,
@@ -216,17 +222,25 @@ export async function signAndSend(
         isInvalid: boolean;
         isUsurped: boolean;
         type: string;
+        asInBlock?: { toHex(): string };
+        asFinalized?: { toHex(): string };
       };
       events?: ChainEvent[];
     }) => {
+      if (settled) return;
       const hash = result.txHash.toHex();
       lastHash = hash;
       armStatusWait(hash);
       const extra = () => {
+        const blockHash = result.status.isFinalized ? result.status.asFinalized?.toHex() : result.status.isInBlock ? result.status.asInBlock?.toHex() : undefined;
+        const location = {
+          ...(blockHash ? { blockHash } : {}),
+          ...(result.txIndex !== undefined ? { extrinsicIndex: result.txIndex } : {}),
+        };
         try {
-          return decorate?.(result) ?? {};
+          return { ...location, ...(decorate?.(result) ?? {}) };
         } catch {
-          return {};
+          return location;
         }
       };
       if (result.dispatchError && (result.status.isInBlock || result.status.isFinalized)) {

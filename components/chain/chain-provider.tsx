@@ -21,7 +21,7 @@ import { readCollectionList, type CollectionSummary } from "@/lib/nfts";
 import { readPools, type PoolView } from "@/lib/pools";
 import { applyChainSnapshot } from "@/lib/chain-snapshot";
 import { errorText } from "@/lib/format";
-import { SUBSTRATE_WS } from "@/lib/network";
+import { SUBSTRATE_WS, TESTNET_GENESIS } from "@/lib/network";
 
 export type ChainStatus = "connecting" | "live" | "unavailable";
 
@@ -64,6 +64,9 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
     let load = 0;
 
     async function loadSnapshot(api: ApiPromise) {
+      if (api.genesisHash.toHex() !== TESTNET_GENESIS || api.runtimeVersion.specName.toString() !== "portaldot-v3") {
+        throw new Error("This node does not match the verified Portaldot V3 testnet. Signing is disabled.");
+      }
       const [chain, header, assetRows, collectionRows, collectionTotal, poolRows, poolTotal] =
         await Promise.all([
           api.rpc.system.chain(),

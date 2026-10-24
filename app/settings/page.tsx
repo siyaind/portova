@@ -12,6 +12,8 @@ import {
   NODE_CONSOLE,
   SS58_PREFIX,
   SUBSTRATE_WS,
+  TESTNET_GENESIS,
+  BLOCK_EXPLORER,
 } from "@/lib/network";
 
 export default function SettingsPage() {
@@ -47,6 +49,8 @@ export default function SettingsPage() {
         <Setting label="SS58 prefix" value={String(SS58_PREFIX)} />
         <Setting label="EVM RPC" value={EVM_HTTP} />
         <Setting label="Node console" value={NODE_CONSOLE} />
+        <Setting label="Testnet explorer" value={BLOCK_EXPLORER} />
+        <Setting label="Verified genesis" value={TESTNET_GENESIS} />
         <Setting
           label="Native token"
           value={`${NATIVE_SYMBOL}, ${NATIVE_DECIMALS} decimals, read from System.Account`}
