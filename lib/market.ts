@@ -1,5 +1,6 @@
 import type { ApiPromise } from "@polkadot/api";
-import { readItemProfile } from "@/lib/nfts";
+import { readItemProfile } from "./nfts.ts";
+import { storagePage, type StoragePageQuery } from "./storage-page.ts";
 
 export const NFT_FEATURE_TRADING = 1n;
 
@@ -62,48 +63,23 @@ function saleFromPrice(stored: PriceCodec): ItemSale {
 }
 
 export async function scanListings(api: ApiPromise, collectionIds: string[]): Promise<Listing[]> {
-  const allowed = new Set(collectionIds.filter((id) => /^\d+$/.test(id)).slice(0, 20));
-  try {
-    const entries = (await api.query.nfts.itemPriceOf.entries()) as Array<
-      [{ args: unknown[] }, PriceCodec]
-    >;
-    return listingsFromPrices(api, entries, allowed);
-  } catch {
-    return scanListingsByProbe(api, [...allowed]);
-  }
-}
-
-async function listingsFromPrices(
-  api: ApiPromise,
-  entries: Array<[{ args: unknown[] }, PriceCodec]>,
-  allowed: Set<string>,
-): Promise<Listing[]> {
+  const allowed = new Set(collectionIds.filter(id => /^\d+$/.test(id)));
   const listings: Listing[] = [];
-  for (const [key, value] of entries) {
-    const collectionId = argText(key.args[0]);
-    const itemId = argText(key.args[1]);
-    if (!allowed.has(collectionId) || !inScanRange(itemId)) continue;
-    const sale = saleFromPrice(value);
-    if (!sale.listed || !sale.price) continue;
-    listings.push(await listingRow(api, collectionId, itemId, sale));
-  }
-  return listings;
+  let page = await readListingsPage(api);
+  listings.push(...page.rows);
+  while (page.nextCursor) { page = await readListingsPage(api, { cursor: page.nextCursor, blockHash: page.blockHash }); listings.push(...page.rows); }
+  return listings.filter(row => allowed.has(row.collectionId));
 }
-
-async function scanListingsByProbe(api: ApiPromise, collectionIds: string[]): Promise<Listing[]> {
-  const listings: Listing[] = [];
-  for (const collectionId of collectionIds) {
-    for (let itemId = 0; itemId < 24; itemId += 1) {
-      try {
-        const sale = await readItemSale(api, collectionId, String(itemId));
-        if (!sale.listed || !sale.price) continue;
-        listings.push(await listingRow(api, collectionId, String(itemId), sale));
-      } catch {
-        continue;
-      }
-    }
+export async function readListingsPage(api: ApiPromise, options: { cursor?: string | null; blockHash?: string; pageSize?: number } = {}) {
+  const blockHash = options.blockHash ?? (await api.rpc.chain.getFinalizedHead()).toHex();
+  const at = await api.at(blockHash);
+  const page = await storagePage(at.query.nfts.itemPriceOf as unknown as StoragePageQuery<PriceCodec>, options.cursor, options.pageSize);
+  const rows: Listing[] = [];
+  for (const [key, value] of page.entries) {
+    const collectionId = argText(key.args[0]), itemId = argText(key.args[1]), sale = saleFromPrice(value);
+    if (/^\d+$/.test(collectionId) && /^\d+$/.test(itemId) && sale.listed && sale.price) rows.push(await listingRow(at as unknown as ApiPromise, collectionId, itemId, sale));
   }
-  return listings;
+  return { rows, blockHash, nextCursor: page.nextCursor, complete: page.complete, scanned: page.entries.length };
 }
 
 async function listingRow(api: ApiPromise, collectionId: string, itemId: string, sale: ItemSale): Promise<Listing> {
@@ -119,11 +95,8 @@ async function listingRow(api: ApiPromise, collectionId: string, itemId: string,
   };
 }
 
-function inScanRange(itemId: string): boolean {
-  return /^\d+$/.test(itemId) && Number(itemId) >= 0 && Number(itemId) <= 23;
-}
-
 function argText(value: unknown): string {
+  if (typeof value === "string") return value;
   if (value && typeof value === "object" && "toString" in value && typeof value.toString === "function") {
     return value.toString();
   }

@@ -1,6 +1,7 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { TxUpdate } from "@/lib/assets";
-import { collectionMintSteps } from "@/lib/nft-settings";
+import { collectionMintSteps } from "./nft-settings.ts";
+import { storagePage, type StoragePageQuery } from "./storage-page.ts";
 
 export {
   COLLECTION_SETTING,
@@ -9,7 +10,7 @@ export {
   disabledCollectionSettings,
   disabledItemSettings,
   featureEnabled,
-} from "@/lib/nft-settings";
+} from "./nft-settings.ts";
 
 export const COLLECTION_ROLE = {
   Issuer: 1,
@@ -206,29 +207,24 @@ export function createdCollectionUpdate(result: {
 }
 
 export async function readCollectionList(api: ApiPromise): Promise<CollectionSummary[]> {
-  const next = (await api.query.nfts.nextCollectionId()) as unknown as {
-    isNone?: boolean;
-    unwrap?: () => { toString(): string };
-  };
-  if (next.isNone || !next.unwrap) return [];
-  const nextId = Number(next.unwrap().toString());
-  if (!Number.isInteger(nextId) || nextId <= 0) return [];
-  const limit = Math.min(nextId, 100);
   const rows: CollectionSummary[] = [];
-  for (let id = 0; id < limit; id += 1) {
-    const stored = (await api.query.nfts.collection(id)) as unknown as {
-      isNone?: boolean;
-      unwrap?: () => { owner: { toString(): string }; items: { toString(): string } };
-    };
-    if (stored.isNone || !stored.unwrap) continue;
-    const details = stored.unwrap();
-    rows.push({
-      id: String(id),
-      owner: details.owner.toString(),
-      items: details.items.toString(),
-    });
-  }
+  let page = await readCollectionPage(api);
+  rows.push(...page.rows);
+  while (page.nextCursor) { page = await readCollectionPage(api, { cursor: page.nextCursor, blockHash: page.blockHash }); rows.push(...page.rows); }
   return rows;
+}
+
+type CollectionCodec = { isNone?: boolean; unwrap?: () => { owner: { toString(): string }; items: { toString(): string } } };
+export async function readCollectionPage(api: ApiPromise, options: { cursor?: string | null; blockHash?: string; pageSize?: number } = {}) {
+  const blockHash = options.blockHash ?? (await api.rpc.chain.getFinalizedHead()).toHex();
+  const at = await api.at(blockHash);
+  const page = await storagePage(at.query.nfts.collection as unknown as StoragePageQuery<CollectionCodec>, options.cursor, options.pageSize);
+  const rows = page.entries.flatMap(([key, stored]) => {
+    const id = key.args[0]?.toString();
+    if (!id || !/^\d+$/.test(id) || stored.isNone || !stored.unwrap) return [];
+    const details = stored.unwrap(); return [{ id, owner: details.owner.toString(), items: details.items.toString() }];
+  });
+  return { rows, blockHash, nextCursor: page.nextCursor, complete: page.complete };
 }
 
 export async function readCollectionProfile(api: ApiPromise, id: string): Promise<CollectionProfile> {

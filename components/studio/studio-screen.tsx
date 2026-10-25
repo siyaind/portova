@@ -6,6 +6,7 @@ import { useChain } from "@/components/chain/chain-provider";
 import { ProceedsBody, useProceedsBalance } from "@/components/project/proceeds-figure";
 import { useProject } from "@/components/project/project-provider";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
+import { LaunchHealth } from "@/components/studio/launch-health";
 import { Button, PageIntro, Panel, StatusPill } from "@/components/ui";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
 import { errorText, formatUnits } from "@/lib/format";
@@ -139,10 +140,12 @@ export function StudioScreen() {
       <PageIntro
         eyebrow="Creator studio"
         title="Project workspace"
-        body="One local project links an asset, a collection, a pool, and a proceeds account. The link stays in this browser. Token creation, collection minting, liquidity, and listing each keep their own signature on the other pages. Saving here does not transfer sale proceeds into a pool."
+        body="Link a token, collection, pool and reference account, then inspect their launch health. This project record stays in your browser. The linked account is a balance and withdrawal reference; it does not establish project revenue or route sales."
       />
+      <LaunchHealth />
       <form
-        className="space-y-4"
+        id="project-links"
+        className="space-y-4 scroll-mt-24"
         onSubmit={(event) => {
           event.preventDefault();
           save();
@@ -239,7 +242,7 @@ export function StudioScreen() {
             </div>
           ) : null}
           <label className="block text-xs text-muted">
-            Proceeds account
+            Linked account for balance & withdrawals
             <input
               className={`${FIELD} text-xs`}
               value={draft.proceeds}
@@ -298,7 +301,8 @@ export function StudioScreen() {
               trading={trading}
             />
           </Stage>
-          <Stage label="Treasury" kind={treasuryKind(proceeds.status)}>
+          <Stage label="Linked-account treasury" kind={treasuryKind(proceeds.status)}>
+            <p className="mb-2 text-xs leading-6 text-faint">This is the linked account&apos;s balance, not verified project revenue. Portova does not attribute sales, allocate royalties or route proceeds automatically.</p>
             <ProceedsBody address={project?.proceeds ?? ""} balance={proceeds} />
             <p className="mt-2">
               <Link href="/treasury" className="text-blue hover:underline">
@@ -318,11 +322,11 @@ export function StudioScreen() {
               decimals={decimals}
             />
           </Stage>
-          <Stage label="Analytics" kind="disabled">
-            No indexer is running, so this project has no chart and no volume.
+          <Stage label="Launch health" kind={project ? "local" : "not-started"}>
+            The health view above combines verified linked objects, holder pages, reserves and scenario estimates. Historical price and volume charts require an indexer and remain unavailable.
           </Stage>
-          <Stage label="Activity" kind="disabled">
-            Project extrinsics are not indexed. Hashes from this browser session stay in the transaction tray, which is not a project history.
+          <Stage label="Account receipts" kind={project?.proceeds ? "local" : "not-started"}>
+            The health view shows finalized browser receipts for the linked account. They can include unrelated actions; project-wide revenue and activity are not indexed.
           </Stage>
         </ul>
       </Panel>

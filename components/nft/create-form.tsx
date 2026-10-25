@@ -6,7 +6,7 @@ import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel } from "@/components/ui";
-import { signAndSend } from "@/lib/assets";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { outcomeWithoutHash, signingLabel, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { byteLength, errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import {
@@ -23,7 +23,7 @@ import {
 } from "@/lib/nfts";
 import { planck } from "@/lib/balance";
 import { feeHeadroom } from "@/lib/fee-evidence";
-import { parsePendingLaunch, pendingStorageKey, type PendingCollectionLaunch } from "@/lib/pending-collection";
+import { useCollectionLaunch } from "@/components/nft/use-collection-launch";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { collectionIdForHash } from "@/lib/tx-reconcile";
@@ -42,8 +42,9 @@ export function CreateCollectionForm() {
   const [constants, setConstants] = useState<NftConstants | null>(null);
   const [constantsError, setConstantsError] = useState<string | null>(null);
   const [predicted, setPredicted] = useState<number | null>(null);
-  const [createdId, setCreatedId] = useState<string | null>(null);
-  const [launch, setLaunch] = useState<PendingCollectionLaunch | null>(null);
+  const pending = useCollectionLaunch();
+  const launch = pending.launch;
+  const createdId = launch?.collectionId ?? null;
   const [collectionUri, setCollectionUri] = useState("");
   const [itemUri, setItemUri] = useState("");
   const [maxSupply, setMaxSupply] = useState("");
@@ -60,7 +61,7 @@ export function CreateCollectionForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
   const previousSigner = useRef<string | null>(null);
-  const launchKey = signer ? pendingStorageKey(chain.getApi()?.genesisHash.toHex() ?? "", signer.address) : null;
+  const { signAndSend } = useWalletOperation({ collectionUri, itemUri, maxSupply, itemId, publicMint, price, transferable, editableMetadata, mintTo, createdId });
 
   useEffect(() => {
     if (!signer) return;
@@ -89,50 +90,17 @@ export function CreateCollectionForm() {
   }, [chain, chain.status, chain.blockNumber]);
 
   useEffect(() => {
-    const api = chain.getApi();
-    if (!signer || !api || chain.status !== "live" || !launchKey) return;
-    const parsed = parsePendingLaunch(window.sessionStorage.getItem(launchKey));
-    if (!parsed || parsed.genesisHash !== api.genesisHash.toHex() || parsed.payer !== signer.address) {
-      setLaunch(null);
-      setCreatedId(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      let next = parsed;
-      if (!next.collectionId && next.createHash) {
-        const recovered = await collectionIdForHash(api, next.createHash).catch(() => null);
-        if (recovered) next = { ...next, collectionId: recovered };
-      }
-      if (cancelled) return;
-      if (next.collectionId) {
-        const profile = await readCollectionProfile(api, next.collectionId).catch(() => null);
-        if (cancelled) return;
-        if (!profile?.found || profile.owner !== signer.address) {
-          window.sessionStorage.removeItem(launchKey);
-          setLaunch(null);
-          setCreatedId(null);
-          setFormError("The saved collection is not owned by this wallet, so it was not resumed.");
-          return;
-        }
-      }
-      window.sessionStorage.setItem(launchKey, JSON.stringify(next));
-      setLaunch(next);
-      setCreatedId(next.collectionId);
-      setCollectionUri(next.settings.collectionMetadata);
-      setItemUri(next.settings.itemMetadata ?? "");
-      setItemId(String(next.settings.itemId));
-      setMaxSupply(next.settings.maxSupply === null ? "" : String(next.settings.maxSupply));
-      setPublicMint(next.settings.publicMint);
-      setPrice(next.settings.price ?? "");
-      setTransferable(next.settings.transferable);
-      setEditableMetadata(next.settings.metadataEditable);
-      setMintTo(next.settings.mintTo);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [chain.status, launchKey, signer]);
+    if (!launch) return;
+    setCollectionUri(launch.settings.collectionMetadata);
+    setItemUri(launch.settings.itemMetadata ?? "");
+    setItemId(String(launch.settings.itemId));
+    setMaxSupply(launch.settings.maxSupply === null ? "" : String(launch.settings.maxSupply));
+    setPublicMint(launch.settings.publicMint);
+    setPrice(launch.settings.price ?? "");
+    setTransferable(launch.settings.transferable);
+    setEditableMetadata(launch.settings.metadataEditable);
+    setMintTo(launch.settings.mintTo);
+  }, [launch?.settings]);
 
   const limit = constants?.stringLimit ?? 256;
   const collectionBytes = byteLength(collectionUri.trim());
@@ -260,6 +228,7 @@ export function CreateCollectionForm() {
     }
     const api = chain.getApi();
     if (!api || !constants) return;
+    if (!pending.ready || (launch && pending.stage !== "ready-to-finish")) { setFormError("Resolve the saved launch before opening another signature. Use Check saved launch below."); return; }
     const signed = {
       ...params,
       admin: signer.address,
@@ -272,8 +241,10 @@ export function CreateCollectionForm() {
     setSubmitting(true);
     setSubmitPhase("signing");
     let tracked: string | null = null;
+    let signingStarted = false;
+    const finishing = createdId !== null && launch !== null;
     try {
-      const finishing = createdId !== null && launch !== null;
+      if (finishing) await pending.assertCanFinish();
       const launchSettings = finishing ? launch.settings : {
         collectionMetadata: signed.collectionMetadata,
         itemMetadata: signed.itemMetadata,
@@ -320,9 +291,9 @@ export function CreateCollectionForm() {
           setSubmitPhase(null);
           return;
         }
-        const room = feeHeadroom(createReview.spendable, createReview.nativeNeed + finishReview.nativeNeed);
+        const room = feeHeadroom(createReview.spendable, createReview.nativeNeed + finishReview.nativeNeed, createReview.fee - createReview.estimatedFee + finishReview.fee - finishReview.estimatedFee);
         if (room !== "ok") {
-          setFormError("The two signatures together leave less than the observed fee gap. The first signature was not opened.");
+          setFormError("The two signatures together leave insufficient policy headroom beyond their estimates and deposits. The first signature was not opened.");
           setSubmitPhase(null);
           return;
         }
@@ -333,26 +304,14 @@ export function CreateCollectionForm() {
         setSubmitPhase(null);
         return;
       }
-      const genesis = api.genesisHash.toHex();
-      const storageKey = pendingStorageKey(genesis, signer.address);
-      const remember = (collectionId: string | null, createHash: string | null) => {
-        const next: PendingCollectionLaunch = {
-          genesisHash: genesis,
-          payer: signer.address,
-          collectionId,
-          createHash,
-          settings: launchSettings,
-        };
-        window.sessionStorage.setItem(storageKey, JSON.stringify(next));
-        setLaunch(next);
-        setCreatedId(collectionId);
-      };
+      if (!finishing) pending.begin(launchSettings);
       const id = crypto.randomUUID();
       tracked = id;
       txs.push({ id, label: finishing ? `Finish collection ${signed.collectionId}` : "Create collection", status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
+      signingStarted = true;
       const result = await signAndSend(
         api,
         review.tx,
@@ -361,9 +320,10 @@ export function CreateCollectionForm() {
         (update) => {
           setSubmitPhase(update.status);
           txs.patch(id, update);
-          if (!finishing && update.hash) remember(update.collectionId ?? null, update.hash);
+          pending.update(finishing ? "finish" : "create", update);
         },
-        createdCollectionUpdate,
+        finishing ? undefined : createdCollectionUpdate,
+        finishing ? async () => { await pending.assertCanFinish(); return true; } : undefined,
       );
       if (result.status === "failed") {
         setFormError(result.error ?? "The transaction failed.");
@@ -375,28 +335,26 @@ export function CreateCollectionForm() {
       if (!finishing) {
         const recovered = result.collectionId ?? (result.hash ? await collectionIdForHash(api, result.hash) : null);
         if ((result.status !== "finalized" && result.status !== "included") || !recovered) {
-          if (result.hash) remember(null, result.hash);
           setFormError(result.status === "finalized"
             ? "The create was finalized, but its nfts.Created id was not found. The app will not guess one or start another collection."
             : txResultMessage(result.status, result.error));
           return;
         }
-        remember(recovered, result.hash ?? null);
+        pending.update("create", { ...result, collectionId: recovered });
         setFormError(`Collection ${recovered} is on chain for this wallet. Sign once more to add the saved metadata and mint.`);
         return;
       }
       if (result.status === "finalized") {
-        window.sessionStorage.removeItem(storageKey);
-        setLaunch(null);
         router.push(`/collection/${launchParams.collectionId}?item=${launchParams.itemId}`);
         return;
       }
       setFormError(txResultMessage(result.status, result.error));
     } catch (cause) {
-      const outcome = outcomeWithoutHash(errorText(cause));
+      const outcome = { ...outcomeWithoutHash(errorText(cause)), ...(!signingStarted || (cause as { notBroadcast?: boolean })?.notBroadcast ? { notBroadcast: true } : {}) };
       setFormError(outcome.error);
       setSubmitPhase(outcome.status);
       if (tracked) txs.patch(tracked, outcome);
+      if (tracked) pending.update(finishing ? "finish" : "create", outcome);
     } finally {
       setSubmitting(false);
     }
@@ -407,14 +365,14 @@ export function CreateCollectionForm() {
       <PageIntro
         eyebrow="NFT launchpad"
         title="Create a world worth owning."
-        body="Start a collection and mint its first item with one signature. Add your metadata, choose your mint settings, and decide what stays editable. You keep the collection's management roles."
+        body="Launch in two signatures: first create the collection, then add metadata and mint its first item. Your progress is saved for this wallet, so you can resume either step after reloading."
       />
       <form
         onSubmit={(event) => void onSubmit(event)}
         className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"
       >
         <Panel className="space-y-4 p-4">
-          <fieldset disabled={Boolean(createdId)} className="min-w-0 space-y-4 border-0 p-0">
+          <fieldset disabled={Boolean(launch) || submitting} className="min-w-0 space-y-4 border-0 p-0">
           <Field label="Collection metadata URI" hint={`${collectionBytes}/${limit} bytes`}>
             <input
               className={FIELD}
@@ -485,20 +443,21 @@ export function CreateCollectionForm() {
               : "The first signature only creates the collection. The chain assigns the id. Metadata and the first mint are a second signature after that id is known."}
           </p>
           </fieldset>
-          {createdId ? (
+          {launch || pending.hasInvalidCheckpoint ? (
             <button
               type="button"
               className="text-xs text-muted underline"
               onClick={() => {
-                if (launchKey) window.sessionStorage.removeItem(launchKey);
-                setLaunch(null);
-                setCreatedId(null);
+                if (!pending.clear()) return;
                 setFormError("The unfinished launch was cleared in this browser. The collection on chain was not removed.");
               }}
             >
-              Leave this collection unfinished
+              {pending.stage === "complete" ? "Start another collection" : "Clear this browser checkpoint"}
             </button>
           ) : null}
+          <ol className="grid grid-cols-2 gap-2 text-xs"><li className={`rounded-lg border p-3 ${createdId ? "border-ok text-ok" : "border-violet text-violet"}`}>1. Create collection{createdId ? ` · #${createdId}` : ""}</li><li className={`rounded-lg border p-3 ${pending.stage === "complete" ? "border-ok text-ok" : "border-line text-muted"}`}>2. Add metadata & mint{pending.stage === "complete" ? " · Finalized" : ""}</li></ol>
+          {launch && <div className="space-y-2 text-xs text-muted"><p>Saved launch: {pending.stage.replaceAll("-", " ")}. {launch.createHash ? `Create receipt ${launch.createHash}` : "No create hash returned; check your wallet before starting another launch."}</p><button type="button" className="text-violet" disabled={pending.checking} onClick={() => void pending.recover()}>{pending.checking ? "Checking chain…" : "Check saved launch"}</button>{createdId && <a href={`/collection/${createdId}`} className="ml-3 text-violet">Open collection</a>}</div>}
+          {pending.error && <p role="alert" className="text-xs text-warn">{pending.error}</p>}
           {attempted && problems.length > 0 ? (
             <ul className="space-y-1 text-sm text-warn">
               {problems.map((problem) => (
@@ -513,7 +472,7 @@ export function CreateCollectionForm() {
           {formError ? <p className="text-sm leading-6 text-warn">{formError}</p> : null}
           <button
             type="submit"
-            disabled={submitting || chain.status !== "live"}
+            disabled={submitting || chain.status !== "live" || (signer !== null && (!pending.ready || (launch !== null && pending.stage !== "ready-to-finish")))}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? signingLabel(submitPhase, "Waiting for the wallet…") : signer ? (createdId ? "Add metadata and mint" : "Create collection") : "Connect Substrate wallet"}

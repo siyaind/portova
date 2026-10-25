@@ -1,6 +1,6 @@
 import type { ApiPromise } from "@polkadot/api";
 import { keptAliveSpendable, largestFrozenBalance, planck } from "./balance.ts";
-import { OBSERVED_FEE_SHORTFALL, feeHeadroom, guardedFee } from "./fee-evidence.ts";
+import { OBSERVED_FEE_SHORTFALL, feeHeadroom, feeReserve, guardedFee, rememberFeeReview } from "./fee-evidence.ts";
 import { formatUnits } from "./format.ts";
 
 export type CheckedCall<T> = {
@@ -8,6 +8,7 @@ export type CheckedCall<T> = {
   tx: T;
   blockHash: string;
   fee: bigint;
+  estimatedFee: bigint;
   spendable: bigint;
   nativeNeed: bigint;
 };
@@ -47,26 +48,27 @@ export async function reviewCall<T>(input: {
     blockHash = await input.finalizedHash();
     const account = await input.accountAt(blockHash, input.payer);
     const info = await input.tx.paymentInfo(input.payer);
-    const shortfall = input.feeShortfall ?? OBSERVED_FEE_SHORTFALL;
-    const fee = guardedFee(planck(info.partialFee.toString()), shortfall);
+    const estimatedFee = planck(info.partialFee.toString());
+    const shortfall = input.feeShortfall ?? (estimatedFee !== null ? feeReserve(estimatedFee) : OBSERVED_FEE_SHORTFALL);
+    const fee = guardedFee(estimatedFee, shortfall);
     const spendableText = keptAliveSpendable(account);
     const spendable = planck(spendableText);
     const nativeNeed = sumDebits(fee, input.nativeDebits);
-    if (fee === null || spendable === null || nativeNeed === null) {
+    if (fee === null || estimatedFee === null || spendable === null || nativeNeed === null) {
       return refuse("The fee, spendable balance, or a required deposit could not be read.");
     }
     const room = feeHeadroom(spendable, nativeNeed, shortfall);
     if (room === "short") {
       return refuse(
-        `This account can spend ${shown(spendable, decimals, symbol)} after frozen funds and the existential deposit. This call needs ${shown(nativeNeed, decimals, symbol)}, including the estimated fee and the observed fee gap.`,
+        `This account can spend ${shown(spendable, decimals, symbol)} after frozen funds and the existential deposit. This call needs ${shown(nativeNeed, decimals, symbol)}, including the fee estimate and a policy reserve.`,
       );
     }
     if (room === "marginal") {
       return refuse(
-        `After this estimate, less than ${shown(shortfall, decimals, symbol)} would remain. The largest measured fee gap is ${shown(shortfall, decimals, symbol)} from two included calls, and that is not a maximum.`,
+        `After this estimate and fee reserve, less than ${shown(shortfall, decimals, symbol)} would remain. The reserve is a cautious policy, not a guaranteed upper bound on fees.`,
       );
     }
-    return { ok: true, tx: input.tx, blockHash, fee, spendable, nativeNeed };
+    return { ok: true, tx: input.tx, blockHash, fee, estimatedFee, spendable, nativeNeed };
   } catch {
     return refuse(blockHash ? "The fee check could not be read." : "The finalized block could not be read.");
   }
@@ -79,7 +81,7 @@ export async function reviewExtrinsic<T>(
   nativeDebits: Array<bigint | null>,
   blockHash?: string,
 ): Promise<CheckedCall<T> | PreflightRefusal> {
-  return reviewCall({
+  const result = await reviewCall({
     tx,
     payer,
     nativeDebits,
@@ -105,6 +107,9 @@ export async function reviewExtrinsic<T>(
       };
     },
   });
+  const method = (tx as { method?: { section?: string; method?: string } }).method;
+  if (result.ok) rememberFeeReview(tx as object, { estimatedFee: result.estimatedFee.toString(), feeBudget: result.fee.toString(), preflightBlockHash: result.blockHash, runtimeVersion: `${api.runtimeVersion.specName}:${api.runtimeVersion.specVersion}`, call: method?.section && method?.method ? `${method.section}.${method.method}` : undefined });
+  return result;
 }
 
 type AccountCodec = {

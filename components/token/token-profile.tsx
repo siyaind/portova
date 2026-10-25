@@ -6,7 +6,8 @@ import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
-import { buildAssetMint, readAssetConstants, signAndSend } from "@/lib/assets";
+import { buildAssetMint, readAssetConstants } from "@/lib/assets";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { planck } from "@/lib/balance";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
@@ -153,6 +154,7 @@ function MintMore({ profile }: { profile: AssetProfile }) {
   const [to, setTo] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { signAndSend } = useWalletOperation({ assetId: profile.id, amount, to });
 
   useEffect(() => {
     if (signer && to === "") setTo(signer.address);

@@ -1,8 +1,10 @@
 # Build state
 
-Updated October 24, 2026. This document describes the current implementation; earlier phase snapshots remain in Git history.
+Updated October 25, 2026. This document describes the current implementation; earlier phase snapshots remain in Git history.
 
-Production release: https://portova.vercel.app, deployment dpl_7av1mpCeeDfQQTpWHVmCSZiNf7La, verified READY on October 24. The live pages and walkthrough video passed HTTP checks; see DEPLOYMENT.md.
+October 25 code follow-up: all signing routes share context guards; both NFT routes share durable launch recovery; discovery uses storage pages; receipts record estimated and actual fees; Studio includes Creator Launch Health. The coding checks pass with 68 tests. Real-wallet testing is assigned to the user. Details: REVIEW_FOLLOWUP.md.
+
+October 24 production baseline: https://portova.vercel.app, deployment dpl_7av1mpCeeDfQQTpWHVmCSZiNf7La, verified READY on October 24. Subsequent releases build from GitHub main; see its Actions and Vercel checks for the current revision.
 
 | Item | Delivered | Validation |
 |---|---|---|

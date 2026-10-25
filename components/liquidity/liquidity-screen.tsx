@@ -7,7 +7,7 @@ import { readAssetMinBalance } from "@/lib/chain-read";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
-import { signAndSend } from "@/lib/assets";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { assetRemainder, optimalDeposit, pairedAmount, removalMinimum } from "@/lib/liquidity-math";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
@@ -59,6 +59,7 @@ export function LiquidityScreen() {
   const actionRef = useRef(false);
 
   const pool = chain.pools?.find((item) => item.lpToken === poolLp) ?? chain.pools?.[0] ?? null;
+  const { signAndSend } = useWalletOperation({ left, right, pool: pool?.lpToken, amount1, amount2, lpAmount, slippage });
 
   useEffect(() => {
     amounts.current = { first: "", second: "" };

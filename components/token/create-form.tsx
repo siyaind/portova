@@ -11,7 +11,6 @@ import {
   buildCreateMintTx,
   metadataDeposit,
   readAssetConstants,
-  signAndSend,
   type AssetConstants,
   type CreateMintParams,
 } from "@/lib/assets";
@@ -21,6 +20,7 @@ import { planck } from "@/lib/balance";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { isProceedsAddress } from "@/lib/project";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink placeholder:text-faint";
@@ -48,6 +48,7 @@ export function CreateTokenForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
   const previousSigner = useRef<string | null>(null);
+  const { signAndSend } = useWalletOperation({ name, symbol, decimals, supply, minBalance, beneficiary, assetId });
 
   useEffect(() => {
     if (!idTouched && chain.assets) {

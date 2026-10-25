@@ -2,6 +2,8 @@
 
 Updated October 24, 2026.
 
+October 25 addition: Creator Studio includes Creator Launch Health with finalized ownership, supply, paginated holders, LP reserves/share, a fee-excluding swap scenario and confirmed browser receipts for the reference account. Treasury is explicitly a linked-account balance/withdrawal tool. It does not attribute sales to projects or route revenue. All signing routes use a shared context guard, both NFT routes share launch recovery, and storage discovery is paginated. Details: REVIEW_FOLLOWUP.md.
+
 PORTOVA gives creators one workspace for native testnet tokens, NFT collections, liquidity and proceeds. Signing requires an injected Substrate wallet with testnet tPOT. Browsing chain state and recovering a known receipt do not require wallet approval.
 
 ## Implemented

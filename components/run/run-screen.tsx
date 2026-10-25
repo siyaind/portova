@@ -13,7 +13,6 @@ import {
   buildCreateMintTx,
   metadataDeposit,
   readAssetConstants,
-  signAndSend,
   type TxUpdate,
 } from "@/lib/assets";
 import { planck } from "@/lib/balance";
@@ -35,6 +34,8 @@ import { reviewExtrinsic } from "@/lib/preflight";
 import { depositStillExecutable, swapStillExecutable } from "@/lib/quote-window";
 import { parseRun, rememberEvidence, type RunEvidence, type RunStepName } from "@/lib/testnet-run";
 import { outcomeWithoutHash, txResultMessage, type TxStatus } from "@/lib/tx-result";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
+import { useCollectionLaunch } from "@/components/nft/use-collection-launch";
 
 const FIELD = "mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-sm";
 const STORAGE_KEY = "portova.testnet-run.v1";
@@ -62,6 +63,13 @@ export function RunScreen() {
   const [swapPreview, setSwapPreview] = useState<{ key: string; out: string; minimum: string } | null>(null);
   const [swapPreviewState, setSwapPreviewState] = useState<"idle" | "reading" | "ready" | "none">("idle");
   const [assetReady, setAssetReady] = useState(false);
+  const nftLaunch = useCollectionLaunch();
+  const { signAndSend } = useWalletOperation({ assetId, collectionId, tokenName, tokenSymbol, collectionUri, nativeAmount, tokenAmount, swapAmount });
+  useEffect(() => {
+    if (!nftLaunch.launch) return;
+    setCollectionUri(nftLaunch.launch.settings.collectionMetadata);
+    if (nftLaunch.launch.collectionId) setCollectionId(nftLaunch.launch.collectionId);
+  }, [nftLaunch.launch?.settings, nftLaunch.launch?.collectionId]);
 
   useEffect(() => {
     setEvidence(parseRun(window.localStorage.getItem(STORAGE_KEY)));
@@ -189,6 +197,8 @@ export function RunScreen() {
     blockHash?: string,
     stillCurrent?: () => Promise<boolean>,
     buttonLabel?: string,
+    onTxUpdate?: (update: TxUpdate) => void,
+    beforeSign?: () => void,
   ): Promise<TxUpdate | null> {
     if (!signer) {
       await wallet.connect();
@@ -218,23 +228,27 @@ export function RunScreen() {
     setBusy(buttonLabel ?? label);
     const id = crypto.randomUUID();
     txs.push({ id, label, status: "signing" });
+    let signingStarted = false;
     try {
+      beforeSign?.();
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
+      signingStarted = true;
       return await signAndSend(
         api,
         review.tx,
         signer.address,
         injected.signer,
-        (update) => txs.patch(id, update),
+        (update) => { txs.patch(id, update); onTxUpdate?.(update); },
         decorate,
         stillCurrent,
       );
     } catch (cause) {
       const text = errorText(cause);
-      const failed = outcomeWithoutHash(text);
+      const failed = { ...outcomeWithoutHash(text), ...(!signingStarted || (cause as { notBroadcast?: boolean })?.notBroadcast ? { notBroadcast: true } : {}) };
       txs.patch(id, failed);
+      onTxUpdate?.(failed);
       setNotice(failed.error);
       return failed;
     } finally {
@@ -311,57 +325,39 @@ export function RunScreen() {
       setNotice("Collection constants are not ready, so nothing was signed.");
       return;
     }
-    const itemMetadata = "ipfs://portova/run-item";
-    const draft = {
-      admin: signer.address,
-      collectionId: 0,
-      transferable: true,
-      metadataEditable: false,
-      maxSupply: 1,
-      publicMint: false,
-      price: null,
-      collectionMetadata: collectionUri.trim(),
-      itemMetadata,
-      itemId: 0,
-      mintTo: signer.address,
-    };
-    const created = await sign(
-      "Create collection",
-      buildCollectionCreateTx(api, draft),
-      [planck(constants.collectionDeposit)],
-      createdCollectionUpdate,
-      undefined,
-      undefined,
-      "Sign NFT",
-    );
-    if (!created) return;
-    const confirmed = created.collectionId && created.status === "finalized" ? created.collectionId : undefined;
-    record("nft", "Create collection", created, confirmed);
-    if (!confirmed) {
-      setNotice(created.status === "finalized"
-        ? "The create was finalized, but the Created event did not include an id. Metadata was not submitted."
-        : txResultMessage(created.status, created.error));
-      return;
+    if (!nftLaunch.ready || (nftLaunch.launch && nftLaunch.stage !== "ready-to-finish")) {
+      setNotice("Resolve the saved NFT launch before opening another signature. Its checkpoint is shared with the NFT launchpad."); return;
     }
-    setCollectionId(confirmed);
-    linkProject({ collectionId: confirmed });
-    const finished = await sign(
-      `Finish collection ${confirmed}`,
-      buildCollectionFinishTx(api, { ...draft, collectionId: Number(confirmed) }),
-      [
-        planck(constants.itemDeposit),
-        byteDeposit(constants, collectionUri.trim()),
-        byteDeposit(constants, itemMetadata),
-        0n,
-      ],
+    const saved = nftLaunch.launch;
+    const finishing = saved !== null;
+    const settings = saved?.settings ?? { collectionMetadata: collectionUri.trim(), itemMetadata: "ipfs://portova/run-item", itemId: 0, maxSupply: 1, publicMint: false, price: null, transferable: true, metadataEditable: false, mintTo: signer.address };
+    const draft = {
+      ...settings,
+      admin: signer.address,
+      collectionId: Number(saved?.collectionId ?? 0),
+      price: settings.price ? parseDecimalToPlanck(settings.price, NATIVE_DECIMALS) : null,
+    };
+    try { if (finishing) await nftLaunch.assertCanFinish(); }
+    catch (cause) { setNotice(errorText(cause)); return; }
+    const result = await sign(
+      finishing ? `Finish collection ${saved!.collectionId}` : "Create collection",
+      finishing ? buildCollectionFinishTx(api, draft) : buildCollectionCreateTx(api, draft),
+      finishing ? [planck(constants.itemDeposit), byteDeposit(constants, settings.collectionMetadata), settings.itemMetadata ? byteDeposit(constants, settings.itemMetadata) : 0n, draft.price ?? 0n] : [planck(constants.collectionDeposit)],
+      finishing ? undefined : createdCollectionUpdate,
       undefined,
-      undefined,
-      undefined,
-      "Sign NFT",
+      finishing ? async () => { await nftLaunch.assertCanFinish(); return true; } : undefined,
+      finishing ? "Finish saved NFT launch" : "Sign NFT",
+      update => nftLaunch.update(finishing ? "finish" : "create", update),
+      () => { if (!finishing) nftLaunch.begin(settings); },
     );
-    if (!finished) return;
-    record("nft", `Finish collection ${confirmed}`, finished, confirmed);
-    if (finished.status === "finalized" || finished.status === "included") await chain.refreshCollections().catch(() => undefined);
+    if (!result) return;
+    const confirmed = saved?.collectionId ?? result.collectionId;
+    record("nft", finishing ? `Finish collection ${confirmed}` : "Create collection", result, confirmed ?? undefined);
+    if (result.status === "finalized" && confirmed) {
+      linkProject({ collectionId: confirmed });
+      if (!finishing) setNotice(`Collection ${confirmed} is finalized. Its saved metadata and mint are ready for the second signature.`);
+      await chain.refreshCollections().catch(() => undefined);
+    }
   }
 
   async function createPool() {
@@ -593,10 +589,12 @@ export function RunScreen() {
         </Panel>
         <Panel className="space-y-3 p-4">
           <h2 className="text-sm font-medium">2. NFT</h2>
-          <label className="block text-xs text-muted">Predicted collection id<input className={FIELD} value={collectionId} onChange={(event) => setCollectionId(event.target.value)} /></label>
-          <label className="block text-xs text-muted">Collection metadata URI<input className={FIELD} value={collectionUri} onChange={(event) => setCollectionUri(event.target.value)} /></label>
-          <p className="text-xs leading-5 text-faint">The batch writes collection and item metadata, mints item 0 to the signer, then locks metadata. The collection id is confirmed from the Created event after finalization.</p>
-          <Action busy={busy} label="Sign NFT" onClick={() => void createNft()} />
+          <label className="block text-xs text-muted">{nftLaunch.launch?.collectionId ? "Created collection id" : "Predicted collection id (display only)"}<input className={FIELD} value={nftLaunch.launch?.collectionId ?? collectionId} disabled /></label>
+          <label className="block text-xs text-muted">Collection metadata URI<input className={FIELD} value={collectionUri} disabled={Boolean(nftLaunch.launch)} onChange={(event) => setCollectionUri(event.target.value)} /></label>
+          <p className="text-xs leading-5 text-faint">Two signatures: 1. Create the collection. 2. Add the saved metadata and mint. The same wallet-bound checkpoint is available in the NFT launchpad after a reload.</p>
+          <Action busy={busy} label={nftLaunch.stage === "ready-to-finish" ? "Finish saved NFT launch" : "Sign NFT"} onClick={() => void createNft()} disabled={signer !== null && (!nftLaunch.ready || (nftLaunch.launch !== null && nftLaunch.stage !== "ready-to-finish"))} />
+          {nftLaunch.launch && <div className="space-y-2 text-xs"><p>Saved launch: {nftLaunch.stage.replaceAll("-", " ")}</p><button type="button" className="mr-3 text-violet" disabled={nftLaunch.checking} onClick={() => void nftLaunch.recover()}>Check saved launch</button><Link href="/nft-launchpad" className="text-violet">Open full NFT launchpad</Link></div>}
+          {nftLaunch.error && <p role="alert" className="text-xs text-warn">{nftLaunch.error}</p>}
         </Panel>
         <Panel className="space-y-3 p-4">
           <h2 className="text-sm font-medium">3. Pool</h2>

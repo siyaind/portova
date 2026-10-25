@@ -85,6 +85,8 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
       patch(item.id, { ...next, genesisHash: TESTNET_GENESIS, checkedAt: Date.now(),
         blockHash: result.blockHash ?? item.blockHash, blockNumber: result.blockNumber ?? item.blockNumber,
         extrinsicIndex: result.extrinsicIndex ?? item.extrinsicIndex, collectionId: result.collectionId ?? item.collectionId,
+        actualFee: result.actualFee ?? item.actualFee, feeTip: result.feeTip ?? item.feeTip,
+        account: settled ? result.account : item.account,
         searchCursor: result.nextCursor,
         recoveryRequested: !settled && item.recoveryRequested && result.nextCursor !== undefined && result.chain !== "unchecked",
         recoveryMessage: result.error ?? (settled ? "Verified from this extrinsic's block and dispatch events." : result.nextCursor !== undefined ? `Searched ${result.scanned} blocks. Next page starts at block ${result.nextCursor}.` : "The searched range did not establish an outcome. Supply an inclusion block or consult the explorer."),

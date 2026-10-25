@@ -1,6 +1,12 @@
 # Validation record
 
-October 24, 2026. Tests and read-only chain checks are separate from a real wallet signing session.
+## October 25 code follow-up
+
+68 tests and the TypeScript/production-build checks pass for the shared wallet guards, staged NFT recovery, paginated discovery, fee measurements and Creator Launch Health. A read-only RPC check matched all 11 collections across three storage pages; a parent-state fee reconstruction covered three call classes and three accounts on runtime 3002. These historical reconstructions are not original wallet quotes. See ../REVIEW_FOLLOWUP.md and the discovery/fee JSON evidence in this directory.
+
+The user explicitly chose to perform real-wallet testing themselves. No new connection permission or transaction was approved by the coding agent. The manual steps below remain unexecuted until the owner records their results.
+
+October 24 baseline follows. Tests and read-only chain checks are separate from a real wallet signing session.
 
 ## Automated checks
 

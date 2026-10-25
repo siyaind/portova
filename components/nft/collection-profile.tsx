@@ -7,7 +7,7 @@ import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
-import { signAndSend } from "@/lib/assets";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { planck } from "@/lib/balance";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { errorText, formatUnits } from "@/lib/format";
@@ -291,6 +291,7 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
   const [busy, setBusy] = useState(false);
   const [fee, setFee] = useState<string | null>(null);
   const [feeError, setFeeError] = useState<string | null>(null);
+  const { signAndSend } = useWalletOperation({ collectionId: profile.id, itemId, to });
   const nextItem = Number(itemId.trim());
   const itemValid =
     /^\d+$/.test(itemId.trim()) && Number.isSafeInteger(nextItem) && nextItem >= 0 && nextItem <= 4_294_967_295;

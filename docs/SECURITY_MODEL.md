@@ -2,6 +2,10 @@
 
 Updated October 24, 2026. This is an implementation description, not an audit.
 
+October 25 follow-up: every signing route now shares a context guard for account, extension source, genesis, runtime, connection, mount lifetime and draft revision. The guard is checked before signing and after asynchronous validation before broadcast. Swap retains the minimum shown for review instead of silently lowering it after a fresh quote. Both NFT routes share durable launch checkpoints, ownership/item checks and safe retry after a proven pre-broadcast rejection. Invalid checkpoints block new creation until explicitly cleared.
+
+Preflight now reserves max(4383 planck, 10% of the estimate) and refuses marginal remaining headroom. This is a policy, not an empirical fee maximum. Original estimates and matching charged-fee events are saved prospectively. Imported account/charged-fee claims are cleared until RPC verification. See REVIEW_FOLLOWUP.md for measured evidence and the user-owned live-wallet tests.
+
 ## Authority and network
 
 The user's injected wallet holds the key. Portova never requests a seed or private key. ChainProvider verifies the expected testnet genesis and runtime name before marking the connection live. The rollout does not silently switch users to mainnet. EVM addresses and native Substrate accounts remain distinct.
