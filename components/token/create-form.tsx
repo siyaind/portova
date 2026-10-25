@@ -21,19 +21,23 @@ import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { isProceedsAddress } from "@/lib/project";
 import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
+import { useProject } from "@/components/project/project-provider";
+import { useGuidedDraft } from "@/components/project/use-guided-draft";
+import { acquireLease } from "@/lib/browser-lock";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink placeholder:text-faint";
 
-export function CreateTokenForm() {
+export function CreateTokenForm({ projectId, initialName = "" }: { projectId?: string; initialName?: string } = {}) {
   const chain = useChain();
   const wallet = useSubstrateWallet();
   const txs = useTxs();
   const router = useRouter();
+  const project = useProject();
   const signer = wallet.selected;
   const [constants, setConstants] = useState<AssetConstants | null>(null);
   const [constantsError, setConstantsError] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [symbol, setSymbol] = useState("");
   const [decimals, setDecimals] = useState("8");
   const [supply, setSupply] = useState("");
@@ -48,7 +52,15 @@ export function CreateTokenForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
   const previousSigner = useRef<string | null>(null);
-  const { signAndSend } = useWalletOperation({ name, symbol, decimals, supply, minBalance, beneficiary, assetId });
+  const { signAndSend } = useWalletOperation({ name, symbol, decimals, supply, minBalance, beneficiary, assetId, projectId, projectRevision: projectId ? project.project?.revision : null });
+  const savedDraft = useGuidedDraft(projectId, "token", { name, symbol, decimals, supply, minBalance, assetId }, draft => {
+    if (typeof draft.name === "string") setName(draft.name);
+    if (typeof draft.symbol === "string") setSymbol(draft.symbol);
+    if (typeof draft.decimals === "string") setDecimals(draft.decimals);
+    if (typeof draft.supply === "string") setSupply(draft.supply);
+    if (typeof draft.minBalance === "string") setMinBalance(draft.minBalance);
+    if (typeof draft.assetId === "string") { setAssetId(draft.assetId); setIdTouched(true); }
+  });
 
   useEffect(() => {
     if (!idTouched && chain.assets) {
@@ -191,11 +203,15 @@ export function CreateTokenForm() {
     }
     const api = chain.getApi();
     if (!api || !constants) return;
+    if (!savedDraft.ready || (projectId && project.project?.id !== projectId)) { setFormError("Wait for this project's saved draft before signing."); return; }
+    if (projectId && project.project?.assetId) { setFormError("This project already links a token. Manage that link in Studio before creating another."); return; }
 
     setSubmitting(true);
     setSubmitPhase("signing");
     let tracked: string | null = null;
+    let release: (() => void) | undefined;
     try {
+      if (projectId) { const lease = await acquireLease(`portova:guided:${projectId}`, navigator.locks); release = lease.release; }
       if (await assetIdTaken(api, params.id)) {
         const message = `Asset id ${params.id} is already on chain. Choose another id.`;
         setFormError(message);
@@ -219,6 +235,7 @@ export function CreateTokenForm() {
         id,
         label: `Create asset ${params.id}`,
         status: "signing",
+        projectId, projectField: projectId ? "assetId" : undefined, objectId: String(params.id),
       });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
@@ -233,8 +250,9 @@ export function CreateTokenForm() {
         setFormError(result.error ?? "The transaction failed.");
         return;
       }
-      if (result.status === "finalized" || result.status === "included") await chain.refreshAssets();
+      if (result.status === "finalized" || result.status === "included") void chain.refreshAssets().catch(() => undefined);
       if (result.status === "finalized") {
+        if (projectId) { const error = await project.attach(projectId, "assetId", String(params.id), signer.address); if (error) setFormError(error); return; }
         router.push(`/token/${params.id}`);
         return;
       }
@@ -245,6 +263,7 @@ export function CreateTokenForm() {
       setSubmitPhase(outcome.status);
       if (tracked) txs.patch(tracked, outcome);
     } finally {
+      release?.();
       setSubmitting(false);
     }
   }
@@ -252,14 +271,17 @@ export function CreateTokenForm() {
   return (
     <div className="space-y-6">
       <PageIntro
+        as={projectId ? "h2" : "h1"}
         eyebrow="Token launchpad"
         title="Give your idea an identity."
         body="Name your token, choose its supply, and launch a native asset with one signature. You become its owner, issuer, admin, and freezer, and can mint more while the issuer role remains."
       />
+      {savedDraft.error && <p role="status" className="text-sm text-warn">{savedDraft.error}</p>}
       <form
         onSubmit={(event) => void onSubmit(event)}
         className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"
       >
+        <fieldset disabled={!savedDraft.ready || submitting} className="contents">
         <Panel className="space-y-4 p-4">
           <Field label="Name" hint={`${nameBytes}/${limit} bytes`}>
             <input className={FIELD} value={name} maxLength={limit} onChange={(event) => setName(event.target.value)} required />
@@ -371,6 +393,7 @@ export function CreateTokenForm() {
             Deposits come from the Assets pallet constants and are reserved, not a price. The fee is paymentInfo from the node. Neither number is a balance.
           </p>
         </Panel>
+        </fieldset>
       </form>
     </div>
   );

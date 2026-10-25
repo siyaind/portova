@@ -1,0 +1,7 @@
+"use client";
+import { useChain } from "@/components/chain/chain-provider";
+import { discoveryLabel } from "@/lib/discovery-state";
+export function DiscoveryStatus() {
+  const chain = useChain();
+  return <details className="rounded-xl border border-line bg-panel/50 p-4 text-xs text-muted"><summary className="cursor-pointer text-ink">Network discovery {Object.values(chain.discovery).every(state => state.complete) ? "· Complete" : "· Loading or partial"}</summary><div className="mt-3 grid gap-3 sm:grid-cols-3">{(["assets", "collections", "pools"] as const).map(kind => <div key={kind}><p className="mb-2 capitalize text-ink">{kind}</p><p className={chain.discovery[kind].error ? "text-warn" : ""}>{discoveryLabel(chain.discovery[kind])}</p><button type="button" disabled={chain.status !== "live" || chain.discovery[kind].loading} onClick={() => void ({ assets: chain.refreshAssets, collections: chain.refreshCollections, pools: chain.refreshPools })[kind]().catch(() => undefined)} className="mt-2 underline disabled:opacity-40">Refresh {kind}</button></div>)}</div><p className="mt-3 leading-5">Each list uses its own finalized snapshot. Incomplete discovery can omit objects; enter a known ID for a direct read.</p></details>;
+}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useId, useRef } from "react";
+import { useModalFocus } from "@/components/wallet/use-modal-focus";
 import { createPortal } from "react-dom";
 import { useConnection, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
@@ -23,15 +24,7 @@ export function WalletDialog({
   const disconnect = useDisconnect();
   const switchChain = useSwitchChain();
 
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    panelRef.current?.querySelector<HTMLElement>("button")?.focus();
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useModalFocus(open, panelRef, onClose);
 
   if (!open) return null;
 
@@ -131,7 +124,8 @@ export function WalletDialog({
           </div>
         </section>
 
-        <section className="mt-5 border-t border-line pt-4">
+        <details className="mt-5 border-t border-line pt-4">
+          <summary className="cursor-pointer text-sm text-muted">Advanced: EVM connection</summary>
           <h3 className="text-sm font-medium">EVM wallet</h3>
           <p className="mt-1 text-xs leading-5 text-faint">
             Injected wallet on chain id {CHAIN_ID}. {NATIVE_SYMBOL} on Substrate
@@ -191,7 +185,7 @@ export function WalletDialog({
               ))
             )}
           </div>
-        </section>
+        </details>
         </div>
       </div>
     </div>,

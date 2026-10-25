@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useChain } from "@/components/chain/chain-provider";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { TESTNET_GENESIS } from "@/lib/network";
-import { TX_STORAGE_KEY, normalizeTx, parseTxs, patchTx, importReceipts, mergeReceipts, type TrackedTx } from "@/lib/tx-storage";
+import { TX_STORAGE_KEY, normalizeTx, parseTxs, patchTx, importReceipts, mergeReceipts, mergeLiveReceipts, type TrackedTx } from "@/lib/tx-storage";
+import { withBrowserLock } from "@/lib/browser-lock";
 import { reconcileReceipt } from "@/lib/tx-reconcile";
 import { outcomeAfterWait } from "@/lib/tx-result";
 export { isExtrinsicHash, type TrackedTx } from "@/lib/tx-storage";
@@ -33,36 +34,45 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
   const recoveryBusy = useRef(false);
   const alive = useRef(true);
   const [tick, setTick] = useState(0);
+  const persistQueue = useRef(Promise.resolve());
   useEffect(() => {
     alive.current = true;
     try { setItems(parseTxs(window.localStorage.getItem(TX_STORAGE_KEY))); }
     catch { setStorageError("Browser storage is unavailable. Export your receipts before closing this page."); }
     setReady(true);
     const timer = window.setInterval(() => setTick((value) => value + 1), 5_000);
-    return () => { alive.current = false; window.clearInterval(timer); };
+    const synchronize = (event: StorageEvent) => {
+      if (event.key === TX_STORAGE_KEY) setItems(current => { const merged = mergeLiveReceipts(current, parseTxs(event.newValue, false)); return JSON.stringify(merged) === JSON.stringify(current) ? current : merged; });
+    };
+    window.addEventListener("storage", synchronize);
+    return () => { alive.current = false; window.clearInterval(timer); window.removeEventListener("storage", synchronize); };
   }, []);
   useEffect(() => {
     if (!ready) return;
-    try { window.localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(items)); setStorageError(null); }
-    catch { setStorageError("Receipt storage is full or unavailable. New receipts are in memory; export a backup before closing this page."); }
+    persistQueue.current = persistQueue.current.then(() => withBrowserLock("portova:receipts", () => {
+      const merged = mergeLiveReceipts(parseTxs(window.localStorage.getItem(TX_STORAGE_KEY), false), itemsRef.current);
+      const raw = JSON.stringify(merged);
+      if (window.localStorage.getItem(TX_STORAGE_KEY) !== raw) window.localStorage.setItem(TX_STORAGE_KEY, raw);
+      if (alive.current) { setStorageError(null); setItems(current => { const combined = mergeLiveReceipts(current, merged); return JSON.stringify(current) === JSON.stringify(combined) ? current : combined; }); }
+    })).catch(() => { if (alive.current) setStorageError("Receipt storage or tab coordination is unavailable. New receipts are in memory; export a backup before closing this page."); });
   }, [items, ready]);
 
   const push = useCallback((item: TrackedTx) => {
     const { chain, wallet } = context.current;
     const start = Number(chain.blockNumber);
-    const next = normalizeTx({ ...item, createdAt: item.createdAt ?? Date.now(),
+    const next = normalizeTx({ ...item, createdAt: item.createdAt ?? Date.now(), updatedAt: Date.now(), changeId: crypto.randomUUID(),
       genesisHash: item.genesisHash ?? chain.getApi()?.genesisHash.toHex() ?? TESTNET_GENESIS,
       account: item.account ?? wallet.selected?.address,
       fromBlock: item.fromBlock ?? (chain.blockNumber && Number.isSafeInteger(start) ? Math.max(0, start - 2) : undefined) });
     if (next) setItems((current) => [next, ...current.filter((row) => row.id !== next.id)]);
   }, []);
-  const patch = useCallback((id: string, update: Partial<TrackedTx>) => setItems((current) => current.map((item) => item.id === id ? patchTx(item, update) : item)), []);
+  const patch = useCallback((id: string, update: Partial<TrackedTx>) => setItems((current) => current.map((item) => item.id === id ? patchTx(item, { ...update, updatedAt: Date.now(), changeId: crypto.randomUUID() }) : item)), []);
   const requestRecovery = useCallback((id: string, enabled = true) => patch(id, { recoveryRequested: enabled, checkedAt: undefined, recoveryMessage: enabled ? "Searching the connected chain…" : "Older-block search paused." }), [patch]);
   const importBackup = useCallback((raw: string) => {
     const incoming = importReceipts(raw, TESTNET_GENESIS);
     const merged = mergeReceipts(itemsRef.current, incoming);
     const added = merged.length - itemsRef.current.length;
-    setItems(merged); return added;
+    setItems(current => mergeReceipts(current, incoming)); return added;
   }, []);
 
   useEffect(() => {

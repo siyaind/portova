@@ -7,6 +7,8 @@ export type TrackedTx = {
   fromBlock?: number; blockHash?: string; blockNumber?: number; extrinsicIndex?: number;
   searchCursor?: number; recoveryRequested?: boolean; recoveryMessage?: string;
   estimatedFee?: string; feeBudget?: string; actualFee?: string; feeTip?: string; preflightBlockHash?: string; runtimeVersion?: string; call?: string;
+  updatedAt?: number; changeId?: string;
+  projectId?: string; projectField?: "assetId" | "collectionId" | "poolLpToken"; objectId?: string;
 };
 const PHASES = new Set<TxStatus>(["signing", "submitted", "included", "finalized", "failed", "ambiguous"]);
 export const isExtrinsicHash = (value: unknown): value is string => typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
@@ -29,11 +31,14 @@ export function normalizeTx(entry: unknown): TrackedTx | null {
     blockNumber: number(record.blockNumber), extrinsicIndex: number(record.extrinsicIndex), searchCursor: number(record.searchCursor),
     recoveryRequested: record.recoveryRequested === true, recoveryMessage: text(record.recoveryMessage, 400),
     estimatedFee: fee(record.estimatedFee), feeBudget: fee(record.feeBudget), actualFee: fee(record.actualFee), feeTip: fee(record.feeTip),
+    updatedAt: number(record.updatedAt), changeId: text(record.changeId, 100),
+    projectId: text(record.projectId, 80), projectField: record.projectField && ["assetId", "collectionId", "poolLpToken"].includes(record.projectField) ? record.projectField : undefined,
+    objectId: typeof record.objectId === "string" && /^\d{1,10}$/.test(record.objectId) ? record.objectId : undefined,
     preflightBlockHash: isExtrinsicHash(record.preflightBlockHash) ? record.preflightBlockHash : undefined, runtimeVersion: text(record.runtimeVersion, 100), call: text(record.call, 100),
   };
 }
 
-export function parseTxs(raw: string | null): TrackedTx[] {
+export function parseTxs(raw: string | null, restorePending = true): TrackedTx[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -41,7 +46,7 @@ export function parseTxs(raw: string | null): TrackedTx[] {
     return parsed.flatMap((entry) => {
       const item = normalizeTx(entry);
       if (!item) return [];
-      if ((item.status === "signing" || item.status === "submitted") && !item.hash) {
+      if (restorePending && (item.status === "signing" || item.status === "submitted") && !item.hash) {
         item.status = statusWithoutHash(item.status);
         item.error = "No transaction hash was returned. The outcome is unknown. Check the wallet before trying again.";
       }
@@ -50,10 +55,29 @@ export function parseTxs(raw: string | null): TrackedTx[] {
   } catch { return []; }
 }
 
+/** Merge concurrent tabs by revision while preserving verified terminal outcomes and every receipt. */
+export function mergeLiveReceipts(left: TrackedTx[], right: TrackedTx[]): TrackedTx[] {
+  const rows = [...left];
+  for (const incoming of right) {
+    const index = rows.findIndex(row => row.id === incoming.id || (!!incoming.hash && row.hash === incoming.hash && row.genesisHash === incoming.genesisHash));
+    if (index < 0) { rows.push(incoming); continue; }
+    const current = rows[index];
+    const terminal = (row: TrackedTx) => row.status === "finalized" || row.status === "failed";
+    if (terminal(current) && !terminal(incoming)) continue;
+    const newer = (incoming.updatedAt ?? incoming.createdAt ?? 0) > (current.updatedAt ?? current.createdAt ?? 0)
+      || ((incoming.updatedAt ?? incoming.createdAt ?? 0) === (current.updatedAt ?? current.createdAt ?? 0) && (incoming.changeId ?? "") > (current.changeId ?? ""));
+    if (newer || (!terminal(current) && terminal(incoming))) rows[index] = { ...patchTx(current, incoming), id: current.id };
+  }
+  return rows.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
 export function patchTx(item: TrackedTx, update: Partial<TrackedTx>): TrackedTx {
   // A late subscription or recovery page cannot demote a confirmed result.
   if ((item.status === "finalized" || item.status === "failed") && update.status && update.status !== item.status) return item;
-  return normalizeTx({ ...item, ...update }) ?? item;
+  const stable = ["actualFee", "feeTip", "account", "blockHash", "blockNumber", "extrinsicIndex", "collectionId", "projectId", "projectField", "objectId"] as const;
+  const evidence = item.status === "finalized" || item.status === "failed"
+    ? Object.fromEntries(stable.filter(key => update[key] === undefined && item[key] !== undefined).map(key => [key, item[key]])) : {};
+  return normalizeTx({ ...item, ...update, ...evidence }) ?? item;
 }
 
 export function exportReceipts(items: TrackedTx[], genesisHash: string): string {
@@ -72,6 +96,7 @@ export function importReceipts(raw: string, genesisHash: string): TrackedTx[] {
     if (!item || (item.genesisHash && item.genesisHash !== genesisHash.toLowerCase())) return [];
     return [{ ...item, id: crypto.randomUUID(), genesisHash: genesisHash.toLowerCase(), status: "ambiguous" as const,
       actualFee: undefined, feeTip: undefined, account: undefined,
+      projectId: undefined, projectField: undefined, objectId: undefined, updatedAt: Date.now(), changeId: crypto.randomUUID(),
       error: "Imported record. Its outcome must be verified against the chain.", checkedAt: undefined,
       recoveryRequested: false, searchCursor: undefined, recoveryMessage: undefined }];
   });

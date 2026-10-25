@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useConnection } from "wagmi";
 import { useChain } from "@/components/chain/chain-provider";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
+import { useTxs } from "@/components/tx/tx-tracker";
+import { sameAccount } from "@/lib/withdrawal";
 import { StatusPill } from "@/components/ui";
 import type { AccountSnapshot } from "@/lib/chain-read";
 import { formatUnits, shortAddress } from "@/lib/format";
@@ -13,11 +15,15 @@ export function HoldingsTable({ compact = false }: { compact?: boolean }) {
   const chain = useChain();
   const substrate = useSubstrateWallet();
   const evm = useConnection();
+  const txs = useTxs();
   const address = substrate.selected?.address ?? null;
   const [snapshot, setSnapshot] = useState<AccountSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refresh, setRefresh] = useState(0);
 
-  const assetCount = chain.assets?.length ?? -1;
+  const settled = txs.items.filter(row => sameAccount(row.account, address) && ["finalized", "failed"].includes(row.status)).map(row => `${row.id}:${row.status}:${row.actualFee ?? ""}`).join("|");
+  useEffect(() => { const timer = window.setInterval(() => setRefresh(value => value + 1), 30_000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { setSnapshot(null); }, [address]);
 
   useEffect(() => {
     if (!address || chain.status !== "live") {
@@ -44,10 +50,15 @@ export function HoldingsTable({ compact = false }: { compact?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [address, assetCount, chain.status, chain.readAccount]);
+  }, [address, chain.assets, chain.discovery.assets.complete, chain.status, chain.readAccount, settled, refresh]);
 
   return (
     <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 text-xs text-muted">
+        <span>{loading ? "Refreshing finalized balances…" : snapshot?.loadedAt ? `Snapshot ${new Date(snapshot.loadedAt).toLocaleTimeString()} · finalized block ${snapshot.blockNumber}` : "Balances refresh every 30 seconds and after settled transactions."}</span>
+        <button type="button" disabled={!address || chain.status !== "live" || loading} onClick={() => setRefresh(value => value + 1)} className="rounded-lg border border-line px-3 py-2 text-ink disabled:opacity-40">Refresh balances</button>
+      </div>
+      {snapshot?.coverageNote && <p role="status" className="border-b border-line px-4 py-3 text-xs leading-6 text-warn">{snapshot.coverageNote} {snapshot.assetsChecked ?? 0} asset IDs checked.{snapshot.failedAssets?.length ? ` Failed IDs: ${snapshot.failedAssets.join(", ")}.` : ""}</p>}
       <table className="w-full border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-line text-xs tracking-wide text-faint uppercase">
@@ -71,7 +82,7 @@ export function HoldingsTable({ compact = false }: { compact?: boolean }) {
               {nativeAmount(address, chain.status, loading, snapshot)}
             </td>
             <td className="hidden px-4 py-3 text-muted sm:table-cell">System.Account free</td>
-            <td className="px-4 py-3">{nativeState(address, chain.status, snapshot)}</td>
+            <td className="px-4 py-3">{loading && snapshot ? <StatusPill tone="warn">Refreshing</StatusPill> : nativeState(address, chain.status, snapshot)}</td>
           </tr>
           <AssetRows
             address={address}
@@ -197,10 +208,10 @@ function AssetRows({
     return (
       <tr className="border-b border-line">
         <td className="px-4 py-3 font-medium">Created assets</td>
-        <td className="px-4 py-3 font-mono text-muted">None</td>
+        <td className="px-4 py-3 font-mono text-muted">{snapshot.holdingsComplete === false ? "Unverified" : "None"}</td>
         <td className="hidden px-4 py-3 text-muted sm:table-cell">Assets.account</td>
         <td className="px-4 py-3">
-          <StatusPill tone="ok">No balance</StatusPill>
+          <StatusPill tone={snapshot.holdingsComplete === false ? "warn" : "ok"}>{snapshot.holdingsComplete === false ? "Partial read" : "No balance"}</StatusPill>
         </td>
       </tr>
     );

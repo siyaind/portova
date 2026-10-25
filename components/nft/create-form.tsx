@@ -28,16 +28,19 @@ import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { collectionIdForHash } from "@/lib/tx-reconcile";
 import { isProceedsAddress } from "@/lib/project";
+import { useProject } from "@/components/project/project-provider";
+import { useGuidedDraft } from "@/components/project/use-guided-draft";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink placeholder:text-faint";
 const FEE_ACCOUNT = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
 
-export function CreateCollectionForm() {
+export function CreateCollectionForm({ projectId }: { projectId?: string } = {}) {
   const chain = useChain();
   const wallet = useSubstrateWallet();
   const txs = useTxs();
   const router = useRouter();
+  const project = useProject();
   const signer = wallet.selected;
   const [constants, setConstants] = useState<NftConstants | null>(null);
   const [constantsError, setConstantsError] = useState<string | null>(null);
@@ -61,7 +64,18 @@ export function CreateCollectionForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<TxStatus | null>(null);
   const previousSigner = useRef<string | null>(null);
-  const { signAndSend } = useWalletOperation({ collectionUri, itemUri, maxSupply, itemId, publicMint, price, transferable, editableMetadata, mintTo, createdId });
+  const { signAndSend } = useWalletOperation({ collectionUri, itemUri, maxSupply, itemId, publicMint, price, transferable, editableMetadata, mintTo, createdId, projectId, projectRevision: projectId ? project.project?.revision : null });
+  const savedDraft = useGuidedDraft(projectId, "nft", { collectionUri, itemUri, maxSupply, itemId, publicMint, price, transferable, editableMetadata }, draft => {
+    if (launch) return;
+    if (typeof draft.collectionUri === "string") setCollectionUri(draft.collectionUri);
+    if (typeof draft.itemUri === "string") setItemUri(draft.itemUri);
+    if (typeof draft.maxSupply === "string") setMaxSupply(draft.maxSupply);
+    if (typeof draft.itemId === "string") setItemId(draft.itemId);
+    if (typeof draft.price === "string") setPrice(draft.price);
+    if (typeof draft.publicMint === "boolean") setPublicMint(draft.publicMint);
+    if (typeof draft.transferable === "boolean") setTransferable(draft.transferable);
+    if (typeof draft.editableMetadata === "boolean") setEditableMetadata(draft.editableMetadata);
+  });
 
   useEffect(() => {
     if (!signer) return;
@@ -228,6 +242,8 @@ export function CreateCollectionForm() {
     }
     const api = chain.getApi();
     if (!api || !constants) return;
+    if (!savedDraft.ready || (projectId && project.project?.id !== projectId)) { setFormError("Wait for this project's saved draft before signing."); return; }
+    if (projectId && project.project?.collectionId) { setFormError("This project already links a collection. Manage that link in Studio before creating another."); return; }
     if (!pending.ready || (launch && pending.stage !== "ready-to-finish")) { setFormError("Resolve the saved launch before opening another signature. Use Check saved launch below."); return; }
     const signed = {
       ...params,
@@ -243,7 +259,9 @@ export function CreateCollectionForm() {
     let tracked: string | null = null;
     let signingStarted = false;
     const finishing = createdId !== null && launch !== null;
+    let release: (() => void) | undefined;
     try {
+      release = await pending.acquire();
       if (finishing) await pending.assertCanFinish();
       const launchSettings = finishing ? launch.settings : {
         collectionMetadata: signed.collectionMetadata,
@@ -307,7 +325,7 @@ export function CreateCollectionForm() {
       if (!finishing) pending.begin(launchSettings);
       const id = crypto.randomUUID();
       tracked = id;
-      txs.push({ id, label: finishing ? `Finish collection ${signed.collectionId}` : "Create collection", status: "signing" });
+      txs.push({ id, label: finishing ? `Finish collection ${signed.collectionId}` : "Create collection", status: "signing", projectId, projectField: projectId && finishing ? "collectionId" : undefined, objectId: finishing ? String(launchParams.collectionId) : undefined });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
       if (!injected.signer) throw new Error("This wallet did not provide a signer.");
@@ -323,7 +341,7 @@ export function CreateCollectionForm() {
           pending.update(finishing ? "finish" : "create", update);
         },
         finishing ? undefined : createdCollectionUpdate,
-        finishing ? async () => { await pending.assertCanFinish(); return true; } : undefined,
+        finishing ? async () => { await pending.assertCanFinish(); return true; } : async () => pending.checkpointCurrent(),
       );
       if (result.status === "failed") {
         setFormError(result.error ?? "The transaction failed.");
@@ -345,6 +363,7 @@ export function CreateCollectionForm() {
         return;
       }
       if (result.status === "finalized") {
+        if (projectId) { const error = await project.attach(projectId, "collectionId", String(launchParams.collectionId), signer.address); if (error) setFormError(error); return; }
         router.push(`/collection/${launchParams.collectionId}?item=${launchParams.itemId}`);
         return;
       }
@@ -356,6 +375,7 @@ export function CreateCollectionForm() {
       if (tracked) txs.patch(tracked, outcome);
       if (tracked) pending.update(finishing ? "finish" : "create", outcome);
     } finally {
+      release?.();
       setSubmitting(false);
     }
   }
@@ -363,16 +383,18 @@ export function CreateCollectionForm() {
   return (
     <div className="space-y-6">
       <PageIntro
+        as={projectId ? "h2" : "h1"}
         eyebrow="NFT launchpad"
         title="Create a world worth owning."
         body="Launch in two signatures: first create the collection, then add metadata and mint its first item. Your progress is saved for this wallet, so you can resume either step after reloading."
       />
+      {savedDraft.error && <p role="status" className="text-sm text-warn">{savedDraft.error}</p>}
       <form
         onSubmit={(event) => void onSubmit(event)}
         className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]"
       >
         <Panel className="space-y-4 p-4">
-          <fieldset disabled={Boolean(launch) || submitting} className="min-w-0 space-y-4 border-0 p-0">
+          <fieldset disabled={!savedDraft.ready || Boolean(launch) || submitting} className="min-w-0 space-y-4 border-0 p-0">
           <Field label="Collection metadata URI" hint={`${collectionBytes}/${limit} bytes`}>
             <input
               className={FIELD}
@@ -447,8 +469,8 @@ export function CreateCollectionForm() {
             <button
               type="button"
               className="text-xs text-muted underline"
-              onClick={() => {
-                if (!pending.clear()) return;
+              onClick={async () => {
+                if (!(await pending.clear())) return;
                 setFormError("The unfinished launch was cleared in this browser. The collection on chain was not removed.");
               }}
             >

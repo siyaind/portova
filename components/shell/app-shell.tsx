@@ -7,6 +7,7 @@ import { Brand } from "@/components/brand";
 import { useChain } from "@/components/chain/chain-provider";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { TopBar } from "@/components/shell/top-bar";
+import { DiscoveryStatus } from "@/components/chain/discovery-status";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -63,6 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <TopBar onOpenNav={() => setNavOpen(true)} />
           <main id="main" className="app-main mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-7 sm:px-7 lg:px-9 lg:py-9">
             {children}
+            <div className="mt-8"><DiscoveryStatus /></div>
           </main>
           <div className="app-bottom-bar"><span>Made for what comes next.</span><span>Portova <span className="text-violet">/</span> Portaldot V3 Testnet</span></div>
         </div>
