@@ -33,18 +33,22 @@ import {
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { WALLET_MOVE_WARNING, depositStillExecutable, withdrawalStillExecutable } from "@/lib/quote-window";
+import { useProject } from "@/components/project/project-provider";
+import { acquireLease } from "@/lib/browser-lock";
+import { readPools } from "@/lib/pools";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink";
-export function LiquidityScreen() {
+export function LiquidityScreen({ projectId, assetId }: { projectId?: string; assetId?: string } = {}) {
   const chain = useChain();
   const wallet = useSubstrateWallet();
   const txs = useTxs();
+  const project = useProject();
   const signer = wallet.selected;
   const maps = useAssetMaps();
   const [constants, setConstants] = useState<PoolConstants | null>(null);
   const [left, setLeft] = useState<AssetRef>({ kind: "native" });
-  const [right, setRight] = useState<AssetRef>({ kind: "asset", id: chain.assets?.[0]?.id ?? "1" });
+  const [right, setRight] = useState<AssetRef>({ kind: "asset", id: assetId ?? chain.assets?.[0]?.id ?? "1" });
   const [poolLp, setPoolLp] = useState<string | null>(null);
   const [amount1, setAmount1] = useState("");
   const [amount2, setAmount2] = useState("");
@@ -58,8 +62,10 @@ export function LiquidityScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const actionRef = useRef(false);
 
-  const pool = chain.pools?.find((item) => item.lpToken === poolLp) ?? chain.pools?.[0] ?? null;
-  const { signAndSend } = useWalletOperation({ left, right, pool: pool?.lpToken, amount1, amount2, lpAmount, slippage });
+  const relevantPools = assetId ? chain.pools?.filter(item => [item.asset1, item.asset2].some(side => side.kind === "native") && [item.asset1, item.asset2].some(side => side.kind === "asset" && side.id === assetId)) : chain.pools;
+  const pool = relevantPools?.find((item) => item.lpToken === poolLp) ?? relevantPools?.[0] ?? null;
+  const pairExists = chain.pools?.some(item => (sameAsset(item.asset1, left) && sameAsset(item.asset2, right)) || (sameAsset(item.asset1, right) && sameAsset(item.asset2, left))) ?? false;
+  const { signAndSend } = useWalletOperation({ left, right, pool: pool?.lpToken, amount1, amount2, lpAmount, slippage, projectId, projectRevision: projectId ? project.project?.revision : null });
 
   useEffect(() => {
     amounts.current = { first: "", second: "" };
@@ -77,10 +83,10 @@ export function LiquidityScreen() {
   }, [chain, chain.status]);
 
   useEffect(() => {
-    if (chain.assets?.[0] && right.kind === "asset" && right.id === "1" && !chain.assets.some((asset) => asset.id === "1")) {
+    if (!assetId && chain.assets?.[0] && right.kind === "asset" && right.id === "1" && !chain.assets.some((asset) => asset.id === "1")) {
       setRight({ kind: "asset", id: chain.assets[0].id });
     }
-  }, [chain.assets, right]);
+  }, [chain.assets, right, assetId]);
 
   useEffect(() => {
     const api = chain.getApi();
@@ -124,6 +130,7 @@ export function LiquidityScreen() {
     place?: "add" | "other";
     blockHash?: string;
     stillCurrent?: () => Promise<boolean>;
+    createdPair?: { first: AssetRef; second: AssetRef };
   }) {
     const refresh = input.refresh ?? true;
     const place = input.place ?? "other";
@@ -152,9 +159,11 @@ export function LiquidityScreen() {
       }
     }
     const id = crypto.randomUUID();
+    let release: (() => void) | undefined;
     setBusy(input.label);
-    txs.push({ id, label: input.label, status: "signing" });
     try {
+      if (projectId) { if (project.project?.id !== projectId) throw Error("The project changed. Review its current links before signing."); const lease = await acquireLease(`portova:guided:${projectId}`, navigator.locks); release = lease.release; }
+      txs.push({ id, label: input.label, status: "signing", projectId });
       const result = await signAndSend(
         api,
         review.tx,
@@ -165,6 +174,12 @@ export function LiquidityScreen() {
         input.stillCurrent,
       );
       report(result.hash ? `${txResultMessage(result.status, result.error)} ${result.hash}` : txResultMessage(result.status, result.error));
+      if (projectId && result.status === "finalized" && input.createdPair) {
+        const pair = input.createdPair;
+        const created = (await readPools(api)).find(row => (sameAsset(row.asset1, pair.first) && sameAsset(row.asset2, pair.second)) || (sameAsset(row.asset1, pair.second) && sameAsset(row.asset2, pair.first)));
+        if (!created) report("Pool creation finalized. Refresh pools and link the resulting LP token in the guide.");
+        else { txs.patch(id, { projectField: "poolLpToken", objectId: created.lpToken }); const error = await project.attach(projectId, "poolLpToken", created.lpToken, signer.address); if (error) report(error); }
+      }
       if ((result.status === "finalized" || result.status === "included") && refresh) {
         void chain.refreshPools().catch(() => undefined);
       }
@@ -173,6 +188,7 @@ export function LiquidityScreen() {
       report(text);
       txs.patch(id, outcomeWithoutHash(text));
     } finally {
+      release?.();
       setBusy(null);
     }
   }
@@ -180,10 +196,12 @@ export function LiquidityScreen() {
   return (
     <div className="space-y-6">
       <PageIntro
+        as={projectId ? "h2" : "h1"}
         eyebrow="Liquidity"
         title="Bring your assets together."
         body="Create a pool, manage your deposits, and withdraw liquidity from your wallet. Every action is a separate signature, with reserves and fees read from the network."
       />
+      {projectId && message && <p role="status" className="text-sm leading-6 text-warn">{message}</p>}
       <Panel className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Stored pools</h2>
@@ -197,11 +215,11 @@ export function LiquidityScreen() {
           </p>
         ) : chain.pools.length === 0 ? (
           <p className="mt-3 text-sm leading-6 text-muted">
-            AssetConversion.pools has 0 records. There is no reserve, price, or LP balance to show.
+            {chain.discovery.pools.complete ? "AssetConversion.pools has 0 records at its snapshot." : "Pool discovery is incomplete. Refresh discovery before concluding that no pool exists."}
           </p>
         ) : (
           <ul className="mt-3 space-y-3">
-            {chain.pools.map((item) => (
+            {(relevantPools ?? []).map((item) => (
               <li key={item.lpToken}>
                 <button
                   type="button"
@@ -227,17 +245,19 @@ export function LiquidityScreen() {
           <p className="text-xs leading-5 text-faint">
             Setup fee {constants ? `${formatUnits(constants.poolSetupFee, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}` : chain.status === "connecting" ? "reading" : "unavailable"}, paid in {constants?.poolSetupFeeAsset ?? "the native token"}. Swap fee {constants?.lpFee ?? (chain.status === "connecting" ? "reading" : "unavailable")}. This call does not add liquidity.
           </p>
+          <fieldset disabled={Boolean(projectId)} className="space-y-4">
           <AssetPicker label="First asset" value={left} assets={chain.assets} onChange={setLeft} />
           <AssetPicker label="Second asset" value={right} assets={chain.assets} onChange={setRight} />
+          </fieldset>
           {sameAsset(left, right) ? <p className="text-sm text-warn">Choose two different assets.</p> : null}
           {wallet.error ? <p className="text-sm text-warn">{wallet.error}</p> : null}
           <button
             type="button"
-            disabled={Boolean(busy) || chain.status !== "live" || sameAsset(left, right)}
+            disabled={Boolean(busy) || chain.status !== "live" || sameAsset(left, right) || pairExists}
             onClick={() => void submitCreate()}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy === "Create pool" ? "Waiting for the wallet…" : signer ? "Create pool" : "Connect Substrate wallet"}
+            {pairExists ? "Pool already exists" : busy === "Create pool" ? "Waiting for the wallet…" : signer ? "Create pool" : "Connect Substrate wallet"}
           </button>
         </Panel>
 
@@ -277,7 +297,7 @@ export function LiquidityScreen() {
         </Panel>
       </div>
 
-      <Panel className="space-y-4 p-4">
+      {!projectId && <Panel className="space-y-4 p-4">
         <h2 className="text-sm font-medium">Remove liquidity</h2>
         {!signer ? (
           <p className="text-sm text-muted">Connect a Substrate wallet to read an LP balance.</p>
@@ -321,11 +341,12 @@ export function LiquidityScreen() {
           </>
         )}
         {message ? <p className="text-sm leading-6 text-warn">{message}</p> : null}
-      </Panel>
+      </Panel>}
     </div>
   );
 
   async function submitCreate() {
+    if (pairExists) { setMessage("This pair already has a stored pool. Select it and review a deposit instead of creating it again."); return; }
     if (actionRef.current) return;
     if (!signer) {
       await wallet.connect();
@@ -343,6 +364,7 @@ export function LiquidityScreen() {
         label: "Create pool",
         tx: buildCreatePool(api, left, right),
         nativeDebits: [planck(constants.poolSetupFee)],
+        createdPair: { first: left, second: right },
       });
     } finally {
       actionRef.current = false;
@@ -377,6 +399,7 @@ export function LiquidityScreen() {
       setAddMessage(snapshot.error ?? "The spendable balance could not be read, so the wallet was not opened.");
       return;
     }
+    if (snapshot.holdingsComplete === false) { setAddMessage("The asset balance snapshot is incomplete. Refresh discovery and balances before depositing."); return; }
     const api = chain.getApi();
     if (!api) {
       setAddMessage("The testnet connection is unavailable, so the wallet was not opened.");

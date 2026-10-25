@@ -7,6 +7,8 @@ import type { AccountSnapshot, HoldingRow } from "@/lib/chain-read";
 import { errorText, formatUnits } from "@/lib/format";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { isProceedsAddress } from "@/lib/project";
+import { useTxs } from "@/components/tx/tx-tracker";
+import { sameAccount } from "@/lib/withdrawal";
 
 export type ProceedsStatus = "empty" | "invalid" | "waiting" | "reading" | "ready" | "unavailable";
 
@@ -16,14 +18,18 @@ export function useProceedsBalance(address: string, revision = 0): {
   holdings: HoldingRow[];
   error: string | null;
   assetsPending: boolean;
+  loadedAt?: number; blockNumber?: string; holdingsComplete?: boolean; coverageNote?: string;
 } {
   const chain = useChain();
+  const txs = useTxs();
   const trimmed = address.trim();
   const valid = isProceedsAddress(trimmed);
   const [row, setRow] = useState<{ address: string; snapshot: AccountSnapshot } | null>(null);
   const [assetsPending, setAssetsPending] = useState(false);
 
-  const assetCount = chain.assets?.length ?? -1;
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const timer = window.setInterval(() => setTick(value => value + 1), 30_000); return () => window.clearInterval(timer); }, []);
+  const settled = txs.items.filter(item => sameAccount(item.account, trimmed) && ["finalized", "failed"].includes(item.status)).map(item => `${item.id}:${item.status}:${item.actualFee ?? ""}`).join("|");
 
   useEffect(() => {
     if (!valid || chain.status !== "live") {
@@ -52,7 +58,7 @@ export function useProceedsBalance(address: string, revision = 0): {
     return () => {
       cancelled = true;
     };
-  }, [valid, trimmed, assetCount, chain.status, chain.readAccount, revision]);
+  }, [valid, trimmed, chain.assets, chain.discovery.assets.complete, chain.status, chain.readAccount, revision, tick, settled]);
 
   const current = row?.address === trimmed ? row.snapshot : null;
   if (!trimmed) return { status: "empty", free: null, holdings: [], error: null, assetsPending: false };
@@ -79,7 +85,7 @@ export function useProceedsBalance(address: string, revision = 0): {
       assetsPending: false,
     };
   }
-  return { status: "ready", free, holdings: current.holdings, error: null, assetsPending };
+  return { status: "ready", free, holdings: current.holdings, error: null, assetsPending, loadedAt: current.loadedAt, blockNumber: current.blockNumber, holdingsComplete: current.holdingsComplete, coverageNote: current.coverageNote };
 }
 
 export function ProceedsFigure({ address, revision = 0 }: { address: string; revision?: number }) {
@@ -112,10 +118,12 @@ export function ProceedsBody({
           {formatUnits(balance.free, NATIVE_DECIMALS)} {NATIVE_SYMBOL}
         </p>
         <p>System.Account free balance of the proceeds account.</p>
+        {balance.loadedAt && <p className="text-xs text-faint">Snapshot {new Date(balance.loadedAt).toLocaleTimeString()} · finalized block {balance.blockNumber}. Refreshes every 30 seconds and after settled transactions.</p>}
+        {balance.coverageNote && <p role="status" className="text-xs text-warn">{balance.coverageNote}</p>}
         {balance.assetsPending ? (
           <p>Reading created-asset balances.</p>
         ) : balance.holdings.length === 0 ? (
-          <p>No created-asset balance above zero was returned for this account.</p>
+          <p>{balance.holdingsComplete === false ? "Created-asset balances are not fully verified. Retry discovery and balances." : "No created-asset balance above zero was returned for this account."}</p>
         ) : (
           <ul className="space-y-1">
             {balance.holdings.map((holding) => (

@@ -3,6 +3,8 @@ import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { lpTokenFromPoolValue, parsePoolKey } from "@/lib/pool-key";
 import { readPositionAtFinalizedBlock, type PoolPosition } from "@/lib/pool-position";
 import { balanceDigits, reservePaysSwap } from "@/lib/reserve-quote";
+import { storagePage, type StoragePageQuery } from "@/lib/storage-page";
+import { mapBounded } from "@/lib/async-map";
 
 export { balanceDigits, reservePaysSwap };
 export type { PoolPosition };
@@ -122,30 +124,37 @@ export async function readReserves(
 }
 
 export async function readPools(api: ApiPromise): Promise<PoolView[]> {
-  const entries = await api.query.assetConversion.pools.entries();
-  const pools: PoolView[] = [];
-  for (const [key, value] of entries) {
+  const rows: PoolView[] = []; let cursor: string | null = null, blockHash: string | undefined;
+  do { const page = await readPoolPage(api, cursor, blockHash); rows.push(...page.rows); cursor = page.nextCursor; blockHash = page.blockHash; } while (cursor);
+  return rows;
+}
+
+export async function readPoolPage(api: ApiPromise, cursor?: string | null, snapshotHash?: string) {
+  const blockHash = snapshotHash ?? (await api.rpc.chain.getFinalizedHead()).toHex();
+  const at = await api.at(blockHash) as unknown as ApiPromise;
+  const page = await storagePage(at.query.assetConversion.pools as unknown as StoragePageQuery<Parameters<typeof lpTokenFromPoolValue>[0]>, cursor, 16);
+  const pools = await mapBounded(page.entries, 4, async ([key, value]): Promise<PoolView | null> => {
     let pair: ReturnType<typeof parsePoolKey>;
     try {
       pair = parsePoolKey(key as { args: unknown[] });
     } catch {
-      continue;
+      throw new Error("A stored pool key could not be decoded. Discovery is incomplete.");
     }
-    if (!pair) continue;
+    if (!pair) throw new Error("A stored pool pair could not be decoded.");
     const [asset1, asset2] = pair;
     const lpToken = lpTokenFromPoolValue(value);
-    if (!lpToken) continue;
+    if (!lpToken) throw new Error("A stored LP token could not be decoded.");
     let reserve1: string | null = null;
     let reserve2: string | null = null;
     try {
-      [reserve1, reserve2] = await readReserves(api, asset1, asset2);
+      [reserve1, reserve2] = await readReserves(at, asset1, asset2);
     } catch {
       reserve1 = null;
       reserve2 = null;
     }
     let lpDecimals: number | null = null;
     try {
-      const metadata = (await api.query.poolAssets.metadata(lpToken)) as unknown as {
+      const metadata = (await at.query.poolAssets.metadata(lpToken)) as unknown as {
         decimals?: { toNumber?: () => number };
         isNone?: boolean;
         unwrap?: () => { decimals?: { toNumber?: () => number } };
@@ -156,10 +165,10 @@ export async function readPools(api: ApiPromise): Promise<PoolView[]> {
     } catch {
       lpDecimals = null;
     }
-    const lpSupply = await readLpSupply(api, lpToken);
-    pools.push({ asset1, asset2, lpToken, reserve1, reserve2, lpDecimals, lpSupply });
-  }
-  return pools;
+    const lpSupply = await readLpSupply(at, lpToken);
+    return { asset1, asset2, lpToken, reserve1, reserve2, lpDecimals, lpSupply };
+  });
+  return { rows: pools.filter((row): row is PoolView => row !== null), blockHash, nextCursor: page.nextCursor, complete: page.complete };
 }
 
 export async function quoteExactIn(

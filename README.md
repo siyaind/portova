@@ -84,6 +84,7 @@ npm run build
 | Route | What it does |
 |---|---|
 | `/` | Public landing page |
+| `/launch` | Saved guided token/NFT launch, optional liquidity, automatic finalized-object linking and launch-health review |
 | `/overview` | Connected workspace |
 | `/token-launchpad` | Create an asset |
 | `/token/[id]` | Read one asset |
@@ -134,3 +135,9 @@ Creator Studio now combines ownership, issuer permissions, supply, paginated hol
 All signing screens bind their operations to the originating wallet, extension, network, runtime, connection and reviewed draft. Both NFT routes share a durable two-signature checkpoint. Collection and listing discovery enumerate storage pages instead of fixed numeric ranges, and listing coverage is explicit. Receipts retain pre-sign fee estimates and matching charged-fee events; the fee reserve is a cautious policy, not an empirical maximum.
 
 See the [review response and owner test checklist](docs/REVIEW_FOLLOWUP.md), [pagination evidence](docs/submission/discovery-evidence.json), and [historical fee measurements](docs/submission/fee-measurements.json). The user is responsible for real-wallet acceptance testing.
+
+## Guided launch and reliability follow-up
+
+Start at `/launch` to save a token or NFT plan, resume form drafts, review wallet funding and costs, attach finalized objects to the same project, optionally set up liquidity, and inspect Launch Health. Existing transaction safeguards and explicit signatures are preserved. Portfolio/linked-account reads now show snapshot freshness and incomplete results; discovery runs in independent pages; cross-tab locks coordinate NFT launches, receipt merging and versioned project writes. Wallet-dialog accessibility and browser security headers are included.
+
+See [guided launch, technical changes and acceptance boundaries](docs/GUIDED_LAUNCH.md). The automated suite now has 84 tests. Wallet acceptance testing remains owner-run.

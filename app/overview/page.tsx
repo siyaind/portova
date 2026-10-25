@@ -21,11 +21,11 @@ export default function OverviewPage() {
       <div className="page-eyebrow text-[9px] font-semibold tracking-[0.18em] text-violet uppercase">YOUR CREATIVE COMMAND CENTER</div>
       <h1>Your next idea<br /><span>starts here.</span></h1>
       <p>From your first token to a world of collectibles. Bring your assets, your projects, and your possibilities together.</p>
-      <Link href="/studio" className="hero-studio-link"><Plus size={14} /> Open Creator Studio <ArrowUpRight size={14} /></Link>
+      <Link href="/launch" className="hero-studio-link"><Plus size={14} /> Start a guided launch <ArrowUpRight size={14} /></Link>
     </section>
 
     <div className="grid gap-3 sm:grid-cols-3">
-      {[{ label: "Native assets", value: chain.assets?.length ?? null, note: "Discover tokens on the network", icon: Coins }, { label: "NFT collections", value: chain.collectionCount, note: "Creative worlds on Portaldot", icon: Gem }, { label: "Liquidity pools", value: chain.poolCount, note: "Native assets, connected", icon: Droplets }].map((stat) => <Panel key={stat.label} className="overview-stat"><div className="overview-stat-top"><span>{stat.label}</span><span className="overview-stat-icon"><stat.icon size={15} /></span></div><strong>{stat.value ?? "—"}</strong><small>{chain.status === "connecting" ? "Reading the network…" : stat.value === null ? "Network read unavailable" : stat.note}</small></Panel>)}
+      {[{ label: "Native assets", value: chain.discovery.assets.complete ? chain.assets?.length ?? null : null, note: "Discover tokens on the network", icon: Coins }, { label: "NFT collections", value: chain.collectionCount, note: "Creative worlds on Portaldot", icon: Gem }, { label: "Liquidity pools", value: chain.poolCount, note: "Native assets, connected", icon: Droplets }].map((stat) => <Panel key={stat.label} className="overview-stat"><div className="overview-stat-top"><span>{stat.label}</span><span className="overview-stat-icon"><stat.icon size={15} /></span></div><strong>{stat.value ?? "—"}</strong><small>{chain.status === "connecting" ? "Reading the network…" : stat.value === null ? "Network read unavailable" : stat.note}</small></Panel>)}
     </div>
 
     <div className="grid gap-3 sm:grid-cols-3">{ACTIONS.map((action) => <Link key={action.href} href={action.href} className="overview-action"><span><action.icon size={19} /></span><span><strong>{action.label}</strong><small>{action.detail}</small></span><ArrowUpRight size={16} /></Link>)}</div>

@@ -72,13 +72,15 @@ export function RunScreen() {
   }, [nftLaunch.launch?.settings, nftLaunch.launch?.collectionId]);
 
   useEffect(() => {
-    setEvidence(parseRun(window.localStorage.getItem(STORAGE_KEY)));
+    try { setEvidence(parseRun(window.localStorage.getItem(STORAGE_KEY))); }
+    catch { setNotice("Run history storage is unavailable. Activity can still show in-memory receipts."); }
     setReady(true);
   }, []);
 
   useEffect(() => {
     if (!ready) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(evidence));
+    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(evidence)); }
+    catch { setNotice("Run history could not be saved. Export receipts from Activity before closing."); }
   }, [evidence, ready]);
 
   useEffect(() => {
@@ -93,13 +95,14 @@ export function RunScreen() {
   const [suggestAsset, setSuggestAsset] = useState(false);
 
   useEffect(() => {
-    const saved = window.sessionStorage.getItem("portova.testnet-run.asset.v1");
+    let saved: string | null = null;
+    try { saved = window.sessionStorage.getItem("portova.testnet-run.asset.v1"); } catch { /* The visible draft still works without optional persistence. */ }
     if (saved && /^\d+$/.test(saved)) setAssetId(saved);
     setSuggestAsset(true);
   }, []);
 
   useEffect(() => {
-    if (/^\d+$/.test(assetId)) window.sessionStorage.setItem("portova.testnet-run.asset.v1", assetId);
+    try { if (/^\d+$/.test(assetId)) window.sessionStorage.setItem("portova.testnet-run.asset.v1", assetId); } catch { /* Optional draft persistence. */ }
   }, [assetId]);
 
   useEffect(() => {
@@ -337,15 +340,17 @@ export function RunScreen() {
       collectionId: Number(saved?.collectionId ?? 0),
       price: settings.price ? parseDecimalToPlanck(settings.price, NATIVE_DECIMALS) : null,
     };
-    try { if (finishing) await nftLaunch.assertCanFinish(); }
-    catch (cause) { setNotice(errorText(cause)); return; }
+    let release: (() => void) | undefined;
+    try {
+    release = await nftLaunch.acquire();
+    if (finishing) await nftLaunch.assertCanFinish();
     const result = await sign(
       finishing ? `Finish collection ${saved!.collectionId}` : "Create collection",
       finishing ? buildCollectionFinishTx(api, draft) : buildCollectionCreateTx(api, draft),
       finishing ? [planck(constants.itemDeposit), byteDeposit(constants, settings.collectionMetadata), settings.itemMetadata ? byteDeposit(constants, settings.itemMetadata) : 0n, draft.price ?? 0n] : [planck(constants.collectionDeposit)],
       finishing ? undefined : createdCollectionUpdate,
       undefined,
-      finishing ? async () => { await nftLaunch.assertCanFinish(); return true; } : undefined,
+      finishing ? async () => { await nftLaunch.assertCanFinish(); return true; } : async () => nftLaunch.checkpointCurrent(),
       finishing ? "Finish saved NFT launch" : "Sign NFT",
       update => nftLaunch.update(finishing ? "finish" : "create", update),
       () => { if (!finishing) nftLaunch.begin(settings); },
@@ -358,6 +363,8 @@ export function RunScreen() {
       if (!finishing) setNotice(`Collection ${confirmed} is finalized. Its saved metadata and mint are ready for the second signature.`);
       await chain.refreshCollections().catch(() => undefined);
     }
+    } catch (cause) { setNotice(errorText(cause)); }
+    finally { release?.(); }
   }
 
   async function createPool() {
@@ -555,9 +562,9 @@ export function RunScreen() {
     }
   }
 
-  function linkProject(patch: { assetId?: string; collectionId?: string; poolLpToken?: string }) {
+  async function linkProject(patch: { assetId?: string; collectionId?: string; poolLpToken?: string }) {
     if (!project.project) return;
-    const error = project.save({ ...project.project, ...patch });
+    const error = await project.save({ ...project.project, ...patch });
     if (error) setNotice(error);
   }
 

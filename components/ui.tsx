@@ -41,19 +41,21 @@ export function PageIntro({
   eyebrow,
   title,
   body,
+  as: Heading = "h1",
 }: {
   eyebrow: string;
   title: string;
   body: string;
+  as?: "h1" | "h2";
 }) {
   return (
     <header className="page-intro rise max-w-3xl">
       <p className="page-eyebrow text-[10px] font-semibold tracking-[0.2em] text-violet uppercase">
         {eyebrow}
       </p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] sm:text-[2.6rem] sm:leading-tight">
+      <Heading className="mt-3 text-3xl font-semibold tracking-[-0.045em] sm:text-[2.6rem] sm:leading-tight">
         {title}
-      </h1>
+      </Heading>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">{body}</p>
     </header>
   );

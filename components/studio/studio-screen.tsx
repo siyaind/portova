@@ -45,10 +45,10 @@ export function StudioScreen() {
   const [readError, setReadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!stored.ready || hydrated) return;
+    if (!stored.ready || (hydrated && dirty)) return;
     setDraft(stored.project ?? blankProject());
     setHydrated(true);
-  }, [stored.ready, stored.project, hydrated]);
+  }, [stored.ready, stored.project, hydrated, dirty]);
 
   useEffect(() => {
     const project = stored.project;
@@ -87,8 +87,8 @@ export function StudioScreen() {
 
   }
 
-  function save() {
-    const error = stored.save(draft);
+  async function save() {
+    const error = await stored.save(draft);
     if (error) {
       setNotice(error);
       setNoticeTone("warn");
@@ -100,8 +100,9 @@ export function StudioScreen() {
     setNoticeTone("muted");
   }
 
-  function clear() {
-    stored.clear();
+  async function clear() {
+    const error = await stored.clear();
+    if (error) { setNotice(error); setNoticeTone("warn"); return; }
     setDraft(blankProject());
     setDirty(false);
 
@@ -143,6 +144,8 @@ export function StudioScreen() {
         body="Link a token, collection, pool and reference account, then inspect their launch health. This project record stays in your browser. The linked account is a balance and withdrawal reference; it does not establish project revenue or route sales."
       />
       <LaunchHealth />
+      <Link href="/launch" className="inline-flex rounded-xl border border-violet/30 bg-violet/10 px-4 py-3 text-sm text-violet">{project?.launch ? "Resume guided launch ↗" : "Build this project with the launch guide ↗"}</Link>
+      {stored.storageError && <p role="alert" className="text-sm text-warn">{stored.storageError}</p>}
       <form
         id="project-links"
         className="space-y-4 scroll-mt-24"
@@ -151,6 +154,7 @@ export function StudioScreen() {
           save();
         }}
       >
+        <fieldset disabled={!stored.ready || !hydrated} className="space-y-4">
         <Panel className="space-y-4 p-4">
           <div>
             <h2 className="text-sm font-medium">Project record</h2>
@@ -278,6 +282,7 @@ export function StudioScreen() {
           ) : null}
           {notice ? <p className={`text-sm leading-6 ${noticeTone === "warn" ? "text-warn" : "text-muted"}`}>{notice}</p> : null}
         </Panel>
+        </fieldset>
       </form>
       <Panel>
         <h2 className="border-b border-line px-4 py-3 text-sm font-medium">Stages</h2>

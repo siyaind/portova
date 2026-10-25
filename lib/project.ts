@@ -1,12 +1,16 @@
 import { checkAddress } from "@polkadot/util-crypto";
 import type { PoolView } from "@/lib/pools";
-import { SS58_PREFIX } from "@/lib/network";
+import { SS58_PREFIX } from "./network.ts";
+import { sameAccount } from "./withdrawal.ts";
 
 export const PROJECT_STORAGE_KEY = "portova.creator-project.v1";
 
 const U32_MAX = BigInt("4294967295");
 
 export type CreatorProject = {
+  id?: string;
+  revision?: number;
+  launch?: { kind: "token" | "nft"; liquidity: boolean };
   name: string;
   assetId: string;
   collectionId: string;
@@ -30,6 +34,9 @@ export function blankProject(): CreatorProject {
 
 export function normalizeProject(input: CreatorProject): CreatorProject {
   return {
+    ...(typeof input.id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(input.id) ? { id: input.id } : {}),
+    ...(Number.isSafeInteger(input.revision) && input.revision! >= 0 ? { revision: input.revision } : {}),
+    ...(input.launch && ["token", "nft"].includes(input.launch.kind) && typeof input.launch.liquidity === "boolean" ? { launch: { kind: input.launch.kind, liquidity: input.launch.kind === "token" && input.launch.liquidity } } : {}),
     name: input.name.trim(),
     assetId: input.assetId.trim(),
     collectionId: input.collectionId.trim(),
@@ -74,6 +81,7 @@ export function parseProject(raw: string | null): CreatorProject | null {
   try {
     const value = JSON.parse(raw) as Partial<CreatorProject>;
     const project = normalizeProject({
+      id: value.id, revision: value.revision, launch: value.launch,
       name: typeof value.name === "string" ? value.name : "",
       assetId: typeof value.assetId === "string" ? value.assetId : "",
       collectionId: typeof value.collectionId === "string" ? value.collectionId : "",
@@ -84,6 +92,20 @@ export function parseProject(raw: string | null): CreatorProject | null {
   } catch {
     return null;
   }
+}
+
+export type ProjectField = "assetId" | "collectionId" | "poolLpToken";
+export function saveProjectVersion(current: CreatorProject | null, next: CreatorProject): CreatorProject {
+  if ((current?.id ?? null) !== (next.id ?? null) || (current?.revision ?? 0) !== (next.revision ?? 0)) throw Error("The project was updated in another tab. Reload the current project before saving this draft.");
+  return { ...next, id: current?.id ?? crypto.randomUUID(), revision: (current?.revision ?? 0) + 1 };
+}
+export function attachProjectObject(project: CreatorProject | null, expectedId: string, field: ProjectField, objectId: string, actor: string): CreatorProject {
+  if (!project || project.id !== expectedId) throw Error("The project changed while the transaction was open. Its receipt is saved; link the object in Studio.");
+  if (idError("Object ID", objectId) || !objectId) throw Error("The finalized object ID is invalid.");
+  if (project[field] && project[field] !== objectId) throw Error("The project already links a different object. Review the saved receipt and update Studio explicitly.");
+  if (!isProceedsAddress(actor) || (project.proceeds && !sameAccount(project.proceeds, actor))) throw Error("This transaction belongs to another account. Review the linked account in Studio before attaching it.");
+  if (project[field] === objectId && project.proceeds) return project;
+  return { ...project, [field]: objectId, proceeds: project.proceeds || actor, revision: (project.revision ?? 0) + 1 };
 }
 
 export function linkedIdStage(
