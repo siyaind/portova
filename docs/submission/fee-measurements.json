@@ -1,0 +1,97 @@
+{
+  "capturedAt": "2026-10-25T05:27:14.515Z",
+  "genesisHash": "0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd",
+  "method": "Reconstructed signed queryInfo at parent state compared with inclusion TransactionFeePaid. These are not original wallet paymentInfo quotes.",
+  "measurements": [
+    {
+      "height": 154574,
+      "blockHash": "0xf62e381f0911af316bf2b59328c0e16b0e02f90f604764bfc95a77ef54056c7e",
+      "index": 1,
+      "hash": "0xe232704fcc5edd696f2f1ba71a58f38c5e2be72d1b9df2d2250679264434d91a",
+      "call": "balances.transferKeepAlive",
+      "signer": "5FsktLbTMfyKPkTnhLR5uwvGQapY3d3L5b3J1eAwPbEfahoa",
+      "signerEncoding": {
+        "id": "5FsktLbTMfyKPkTnhLR5uwvGQapY3d3L5b3J1eAwPbEfahoa"
+      },
+      "runtime": "portaldot-v3:3002",
+      "signedBytes": 150,
+      "reconstructedSignedQueryInfo": "1500554199879",
+      "actualFee": "1500554199879",
+      "tip": "0",
+      "reconstructedDifference": "0",
+      "originalWalletEstimate": null,
+      "accountBefore": {
+        "nonce": 6,
+        "consumers": 0,
+        "providers": 1,
+        "sufficients": 0,
+        "data": {
+          "free": 3891086625267492,
+          "reserved": 0,
+          "frozen": 0,
+          "flags": "0x80000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "height": 154647,
+      "blockHash": "0x981ae7e85487ab8fa4f03fa3b83ba098b25f0d0aa4a67a41015d9a4538d78528",
+      "index": 1,
+      "hash": "0xefcec112533763bedf3bdc5d5688dbd037ad04fa0df01073297da5511481a79a",
+      "call": "utility.batchAll",
+      "signer": "5CcDACzSFct1D7Mc5qWKfe8zV3svDNa4xPih4Gn5FKahDJwD",
+      "signerEncoding": {
+        "id": "5CcDACzSFct1D7Mc5qWKfe8zV3svDNa4xPih4Gn5FKahDJwD"
+      },
+      "runtime": "portaldot-v3:3002",
+      "signedBytes": 155,
+      "reconstructedSignedQueryInfo": "1551871530326",
+      "actualFee": "1551871530326",
+      "tip": "0",
+      "reconstructedDifference": "0",
+      "originalWalletEstimate": null,
+      "accountBefore": {
+        "nonce": 17,
+        "consumers": 1,
+        "providers": 1,
+        "sufficients": 0,
+        "data": {
+          "free": "0x000000000000000000aeb442dd4b14a1",
+          "reserved": 700309795796866,
+          "frozen": 0,
+          "flags": "0x80000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "height": 159687,
+      "blockHash": "0x3a78f11dcc1319fa792a2ada21f023b1ef411177f9233e324944ff040d96d231",
+      "index": 1,
+      "hash": "0xf60fcae4e346fc06e0e4164ffa37c0ea0494baa73c10b72c9a491b2dbeb86095",
+      "call": "assetConversion.swapExactTokensForTokens",
+      "signer": "5D7bPWzc83yZaqt8AyXErUYs5DD3GBJ4hULD2eBAoXCrr4GF",
+      "signerEncoding": {
+        "id": "5D7bPWzc83yZaqt8AyXErUYs5DD3GBJ4hULD2eBAoXCrr4GF"
+      },
+      "runtime": "portaldot-v3:3002",
+      "signedBytes": 181,
+      "reconstructedSignedQueryInfo": "1811079332230",
+      "actualFee": "1811079332230",
+      "tip": "0",
+      "reconstructedDifference": "0",
+      "originalWalletEstimate": null,
+      "accountBefore": {
+        "nonce": 36,
+        "consumers": 12,
+        "providers": 1,
+        "sufficients": 0,
+        "data": {
+          "free": "0x0000000000000000008f1a52dd7d587b",
+          "reserved": 3754000000000000,
+          "frozen": 0,
+          "flags": "0x80000000000000000000000000000000"
+        }
+      }
+    }
+  ]
+}

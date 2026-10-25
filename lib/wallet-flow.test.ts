@@ -17,7 +17,7 @@ const result = (index = 0, successIndex = 0) => ({
 test("wallet rejection propagates without broadcasting", async () => {
   let broadcasts = 0;
   const tx = { signAndSend: async () => { broadcasts++; return () => {}; }, signAsync: async () => { throw Error("User rejected request"); } };
-  await assert.rejects(signAndSend(api, tx, "alice", signer, () => {}, undefined, async () => true), /User rejected/);
+  await assert.rejects(signAndSend(api, tx, "alice", signer, () => {}, undefined, async () => true), (cause: Error & { notBroadcast?: boolean }) => { assert.match(cause.message, /User rejected/); assert.equal(cause.notBroadcast, true); return true; });
   assert.equal(broadcasts, 0);
 });
 

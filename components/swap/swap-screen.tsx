@@ -7,7 +7,7 @@ import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel } from "@/components/ui";
-import { signAndSend } from "@/lib/assets";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { readAssetMinBalance } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { assetRemainder, swapQuoteKey } from "@/lib/liquidity-math";
@@ -61,6 +61,7 @@ export function SwapScreen() {
   const busyRef = useRef(false);
 
   const pool = pools?.find((item) => item.lpToken === poolLp) ?? pools?.[0] ?? null;
+  const { signAndSend, current: operationCurrent } = useWalletOperation({ pool: pool?.lpToken, flip, amount, slippage });
   const assetIn = pool ? (flip ? pool.asset2 : pool.asset1) : null;
   const assetOut = pool ? (flip ? pool.asset1 : pool.asset2) : null;
   const decimalsIn = assetIn ? assetDecimals(assetIn, maps.decimals) : null;
@@ -179,13 +180,19 @@ export function SwapScreen() {
     let tracked: string | null = null;
     try {
       const priced = await quoteForSwap(api, assetIn, assetOut, amountIn);
+      if (!operationCurrent()) { setMessage("The wallet or swap inputs changed. Review again; nothing was signed."); return; }
       const fresh = priced?.amount ?? null;
       const hash = priced?.blockHash ?? null;
-      const freshMin = fresh ? applySlippage(BigInt(fresh), slippage) : null;
+      const freshMin = minimum;
       if (!fresh || !freshMin || freshMin <= BigInt(0)) {
         setQuote(null);
         setQuoteState("none");
         setMessage(await minimumReserveMessage(api, pool, assetOut));
+        return;
+      }
+      if (!swapStillExecutable(BigInt(fresh), freshMin)) {
+        setQuote({ key: quoteKey, out: fresh }); setQuotedAt(Date.now()); setQuoteState("ready");
+        setMessage("The quote no longer covers the minimum you reviewed. The quote has been refreshed; review it before signing again.");
         return;
       }
       if (assetIn.kind === "asset") {

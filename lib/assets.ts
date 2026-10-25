@@ -3,6 +3,7 @@ import type { Signer } from "@polkadot/types/types";
 import { plainChainError } from "./chain-error.ts";
 import { collectionIdForHash, reconcileExtrinsic } from "./tx-reconcile.ts";
 import { extrinsicDispatch, outcomeAfterWait } from "./tx-result.ts";
+import { feePaidFor } from "./fee-evidence.ts";
 
 export type AssetConstants = {
   assetDeposit: string;
@@ -32,6 +33,9 @@ export type TxUpdate = {
   collectionId?: string;
   blockHash?: string;
   extrinsicIndex?: number;
+  estimatedFee?: string; feeBudget?: string; actualFee?: string; feeTip?: string; preflightBlockHash?: string; runtimeVersion?: string; call?: string;
+  notBroadcast?: boolean;
+  account?: string; genesisHash?: string;
 };
 
 type ChainEvent = {
@@ -179,9 +183,10 @@ export async function signAndSend(
     let unsubscribe: (() => void) | null = null;
     let lastHash: string | undefined;
     let sawIncluded = false;
+    let broadcastStarted = false;
     let statusTimer: ReturnType<typeof setTimeout> | null = null;
     const signTimer = setTimeout(() => {
-      if (!lastHash) finish(outcomeAfterWait({ sawIncluded: false, chain: "unchecked" }));
+      if (!lastHash) finish({ ...outcomeAfterWait({ sawIncluded: false, chain: "unchecked" }), notBroadcast: !broadcastStarted });
     }, signWaitMs);
     const finish = (update: TxUpdate) => {
       if (settled) return;
@@ -234,6 +239,7 @@ export async function signAndSend(
       const extra = () => {
         const blockHash = result.status.isFinalized ? result.status.asFinalized?.toHex() : result.status.isInBlock ? result.status.asInBlock?.toHex() : undefined;
         const location = {
+          ...feePaidFor(result.events, result.txIndex),
           ...(blockHash ? { blockHash } : {}),
           ...(result.txIndex !== undefined ? { extrinsicIndex: result.txIndex } : {}),
         };
@@ -311,7 +317,8 @@ export async function signAndSend(
     };
     const moved = {
       status: "ambiguous" as const,
-      error: "The chain moved while the wallet was open. The signature was not submitted, so no fee was charged.",
+      notBroadcast: true,
+      error: "The wallet, network, reviewed inputs, or chain state changed while the wallet was open. The signature was not broadcast by Portova. Review again.",
     };
     if (revalidate) {
       if (!tx.signAsync) {
@@ -334,6 +341,7 @@ export async function signAndSend(
             if (!settled) finish(moved);
             return;
           }
+          broadcastStarted = true;
           follow(signed.send(handle));
         })
         .catch((error: unknown) => {
@@ -341,11 +349,13 @@ export async function signAndSend(
             settled = true;
             clearTimeout(signTimer);
             if (statusTimer !== null) clearTimeout(statusTimer);
-            reject(error);
+            const cause = !broadcastStarted ? Object.assign(new Error(error instanceof Error ? error.message : String(error)), { notBroadcast: true }) : error;
+            reject(cause);
           }
         });
       return;
     }
+    broadcastStarted = true;
     follow(tx.signAndSend(address, { signer }, handle));
   });
 }

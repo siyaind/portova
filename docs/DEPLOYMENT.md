@@ -1,6 +1,6 @@
 # Deployment and release record
 
-Updated October 24, 2026.
+October 24 production baseline. Subsequent code follows GitHub main and its Vercel/GitHub Actions checks. The October 25 code changes and validation scope are recorded in REVIEW_FOLLOWUP.md.
 
 ## Current update: deployed to production
 

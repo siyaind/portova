@@ -126,3 +126,11 @@ The [official V3 endpoint announcement](https://x.com/Portaldot_Dev/status/21135
 Treasury withdrawals require the proceeds account, a valid prefix-42 recipient, a positive 14-decimal amount, a reviewed keep-alive fee/balance budget and explicit wallet confirmation. Reviews expire after 60 seconds and are invalidated by account or draft changes. The signed call is rechecked before broadcast.
 
 See [build state](docs/BUILD_STATE.md), [network evidence](docs/submission/network-evidence.json), [architecture](docs/ARCHITECTURE.md), [QA and remaining human wallet checks](docs/submission/QA.md), [demo walkthrough](docs/DEMO.md), and [event checklist](docs/submission/CHECKLIST.md). Automated wallet tests use fake adapters; no new treasury transfer was signed during this update.
+
+## October 25 hardening and Creator Launch Health
+
+Creator Studio now combines ownership, issuer permissions, supply, paginated holders, LP reserves/share, a constant-product swap scenario and confirmed browser receipts in a Creator Launch Health view. Outside-issuer balance is labeled separately from circulating supply; the scenario excludes fees and is not an executable quote. The linked treasury account remains a balance/withdrawal reference, not an automatic revenue-routing system.
+
+All signing screens bind their operations to the originating wallet, extension, network, runtime, connection and reviewed draft. Both NFT routes share a durable two-signature checkpoint. Collection and listing discovery enumerate storage pages instead of fixed numeric ranges, and listing coverage is explicit. Receipts retain pre-sign fee estimates and matching charged-fee events; the fee reserve is a cautious policy, not an empirical maximum.
+
+See the [review response and owner test checklist](docs/REVIEW_FOLLOWUP.md), [pagination evidence](docs/submission/discovery-evidence.json), and [historical fee measurements](docs/submission/fee-measurements.json). The user is responsible for real-wallet acceptance testing.

@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-10-25T05:31:21.711Z",
+  "genesisHash": "0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd",
+  "blockHash": "0x5211f3e055b5493c3332e85a1ff27e99c0cf7fd87095487e40ece1da36399831",
+  "collectionPages": 3,
+  "collectionsFound": 11,
+  "collectionStorageKeys": 11,
+  "complete": true,
+  "listingsFirstPage": {
+    "rows": 0,
+    "entriesChecked": 0,
+    "complete": true,
+    "nextCursor": null
+  }
+}

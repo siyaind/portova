@@ -8,6 +8,7 @@ import { readTradingEnabled } from "@/lib/market";
 import { BLOCK_EXPLORER, TESTNET_GENESIS } from "@/lib/network";
 import { receiptExplorerUrl } from "@/lib/explorer";
 import { exportReceipts } from "@/lib/tx-storage";
+import { formatUnits } from "@/lib/format";
 import { BUILD_CALLS } from "@/lib/reconciliation";
 
 const FIELD = "mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-xs";
@@ -60,6 +61,18 @@ function SessionRow({ item }: { item: TrackedTx }) {
   const txs = useTxs();
   const href = item.hash ? receiptExplorerUrl(item.hash) : null;
   const open = !!item.hash && ["submitted", "included", "ambiguous"].includes(item.status);
-  return <li className="space-y-2 border-b border-line p-5 last:border-0"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-medium">{item.label}</h3><StatusPill tone={item.status === "finalized" ? "ok" : item.status === "failed" ? "bad" : "warn"}>{txStatusLabel(item.status)}</StatusPill></div>{item.hash ? <p className="font-mono text-xs break-all text-muted">{item.hash}</p> : <p className="text-xs text-faint">No hash returned. Check the wallet before trying again.</p>}{item.account && <p className="font-mono text-[10px] break-all text-faint">Account {item.account}</p>}<p className="text-[10px] text-faint">{item.createdAt ? new Date(item.createdAt).toLocaleString() : "Legacy browser receipt"}{item.blockNumber !== undefined ? ` · Block ${item.blockNumber}` : ""}{item.extrinsicIndex !== undefined ? ` · Extrinsic ${item.extrinsicIndex}` : ""}</p>{item.error && <p className="text-xs leading-6 text-warn">{item.error}</p>}{item.recoveryMessage && <p className="text-xs leading-6 text-muted">{item.recoveryMessage}</p>}<div className="flex flex-wrap gap-4 text-xs">{href && <a href={href} target="_blank" rel="noreferrer" className="text-violet">Inspect in explorer ↗</a>}{open && <button type="button" className="text-violet" onClick={() => txs.requestRecovery(item.id, !item.recoveryRequested)}>{item.recoveryRequested ? "Pause older-block search" : item.searchCursor !== undefined ? "Resume older-block search" : "Search older blocks"}</button>}</div></li>;
+  return <li className="space-y-2 border-b border-line p-5 last:border-0"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-medium">{item.label}</h3><StatusPill tone={item.status === "finalized" ? "ok" : item.status === "failed" ? "bad" : "warn"}>{txStatusLabel(item.status)}</StatusPill></div>{item.hash ? <p className="font-mono text-xs break-all text-muted">{item.hash}</p> : <p className="text-xs text-faint">No hash returned. Check the wallet before trying again.</p>}{item.account && <p className="font-mono text-[10px] break-all text-faint">Account {item.account}</p>}<p className="text-[10px] text-faint">{item.createdAt ? new Date(item.createdAt).toLocaleString() : "Legacy browser receipt"}{item.blockNumber !== undefined ? ` · Block ${item.blockNumber}` : ""}{item.extrinsicIndex !== undefined ? ` · Extrinsic ${item.extrinsicIndex}` : ""}</p>{item.error && <p className="text-xs leading-6 text-warn">{item.error}</p>}<FeeSummary item={item} />{item.recoveryMessage && <p className="text-xs leading-6 text-muted">{item.recoveryMessage}</p>}<div className="flex flex-wrap gap-4 text-xs">{href && <a href={href} target="_blank" rel="noreferrer" className="text-violet">Inspect in explorer ↗</a>}{open && <button type="button" className="text-violet" onClick={() => txs.requestRecovery(item.id, !item.recoveryRequested)}>{item.recoveryRequested ? "Pause older-block search" : item.searchCursor !== undefined ? "Resume older-block search" : "Search older blocks"}</button>}</div></li>;
 }
 function countLine(label: string, value: number | null) { return value === null ? `${label} unavailable` : `${value} ${label}`; }
+
+function FeeSummary({ item }: { item: TrackedTx }) {
+  if (!item.estimatedFee && !item.actualFee) return null;
+  const shown = (raw: string) => `${formatUnits(raw, 14, 14)} tPOT`;
+  return <div className="space-y-1 rounded-lg border border-line p-3 text-xs text-muted">
+    {item.estimatedFee && <div>Pre-sign fee estimate: <span className="font-mono">{shown(item.estimatedFee)}</span></div>}
+    {item.feeBudget && <div>Reviewed fee budget: <span className="font-mono">{shown(item.feeBudget)}</span></div>}
+    {item.actualFee && <div>Charged fee from matching chain event: <span className="font-mono">{shown(item.actualFee)}</span></div>}
+    {item.estimatedFee && item.actualFee && <div>Actual minus estimate: <span className="font-mono">{shown((BigInt(item.actualFee) - BigInt(item.estimatedFee)).toString())}</span></div>}
+    {item.runtimeVersion && <div className="text-faint">{item.runtimeVersion}{item.call ? ` · ${item.call}` : ""}</div>}
+  </div>;
+}

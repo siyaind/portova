@@ -30,3 +30,11 @@ test("explorer links validate the full receipt or block identifier", () => {
   assert.equal(blockExplorerUrl(-1), null);
   assert.match(blockExplorerUrl(159687)!, /#\/blocks\/159687$/);
 });
+
+test("fee estimates survive reload while imported charged-fee claims require fresh chain evidence", () => {
+  const receipt = { ...row, account: "unverified-account", estimatedFee: "100", feeBudget: "110", actualFee: "103", runtimeVersion: "portaldot-v3:3002", call: "balances.transferKeepAlive" };
+  assert.equal(parseTxs(JSON.stringify([receipt]))[0].actualFee, "103");
+  const imported = importReceipts(exportReceipts([receipt], genesis), genesis)[0];
+  assert.equal(imported.estimatedFee, "100"); assert.equal(imported.actualFee, undefined);
+  assert.equal(imported.account, undefined);
+});

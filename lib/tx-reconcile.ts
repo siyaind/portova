@@ -1,10 +1,12 @@
 import type { ApiPromise } from "@polkadot/api";
 import type { SignedBlock } from "@polkadot/types/interfaces";
 import { dispatchOutcome, type ChainMatch, type DispatchEvent } from "./tx-result.ts";
+import { feePaidFor } from "./fee-evidence.ts";
+import { decodeAddress, encodeAddress } from "@polkadot/util-crypto";
 
 export { dispatchOutcome };
 
-export type ReceiptLocation = { blockHash?: string; blockNumber?: number; extrinsicIndex?: number; collectionId?: string };
+export type ReceiptLocation = { blockHash?: string; blockNumber?: number; extrinsicIndex?: number; collectionId?: string; actualFee?: string; feeTip?: string; account?: string };
 export type RecoveryOptions = { blockHash?: string; blockNumber?: number; fromBlock?: number; cursor?: number; maxBlocks?: number; signal?: AbortSignal };
 export type RecoveryResult = ReceiptLocation & { chain: ChainMatch; scanned: number; nextCursor?: number; error?: string };
 type Block = SignedBlock;
@@ -48,9 +50,15 @@ export async function reconcileReceipt(api: ApiPromise, hash: string, options: R
         if (canonical !== blockHash) return null;
       }
       const events = await rpc(readEvents(api, block.block.header.hash));
+      let account: string | undefined;
+      try {
+        const encoded = block.block.extrinsics[index].signer?.toJSON?.() as string | { id?: string; Id?: string } | undefined;
+        const address = typeof encoded === "string" ? encoded : encoded?.id ?? encoded?.Id;
+        if (address) account = encodeAddress(decodeAddress(address), 42);
+      } catch { /* Unknown signer encodings must not inherit an imported account claim. */ }
       const dispatch = dispatchOutcome(events, index);
       const chain = dispatch === "failed" ? "failed" : dispatch !== "success" ? "dispatch-unknown" : blockNumber <= finalizedNumber ? "finalized" : "included";
-      return { chain, scanned, blockHash, blockNumber, extrinsicIndex: index, collectionId: dispatch === "success" ? createdCollectionId(events, index) ?? undefined : undefined };
+      return { chain, scanned, blockHash, blockNumber, extrinsicIndex: index, account, ...feePaidFor(events, index), collectionId: dispatch === "success" ? createdCollectionId(events, index) ?? undefined : undefined };
     };
 
     // An inclusion hash/height is an exact lookup, even years after submission.

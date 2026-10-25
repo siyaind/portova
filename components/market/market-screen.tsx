@@ -7,12 +7,12 @@ import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { PageIntro, Panel, StatusPill } from "@/components/ui";
-import { signAndSend } from "@/lib/assets";
+import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { WALLET_MOVE_WARNING } from "@/lib/quote-window";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
-import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, scanListings, type Listing } from "@/lib/market";
+import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, readListingsPage, type Listing } from "@/lib/market";
 import { saleResultIsCurrent } from "@/lib/sale-request";
 import { readItemProfile } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
@@ -30,6 +30,11 @@ export function MarketScreen() {
   const [listings, setListings] = useState<Listing[] | null>(null);
   const [scanState, setScanState] = useState<"idle" | "reading" | "ready" | "error">("idle");
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanCursor, setScanCursor] = useState<string | null>(null);
+  const [scanBlock, setScanBlock] = useState<string | null>(null);
+  const [scanComplete, setScanComplete] = useState(false);
+  const [scanned, setScanned] = useState(0);
+  const scanGeneration = useRef(0);
   const [collectionId, setCollectionId] = useState(params.get("collection") ?? "");
   const [itemId, setItemId] = useState(params.get("item") ?? "");
   const [price, setPrice] = useState("");
@@ -38,6 +43,7 @@ export function MarketScreen() {
   const [sale, setSale] = useState<Listing | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const { signAndSend } = useWalletOperation({ collectionId, itemId, price, buyer, bid });
 
   useEffect(() => {
     const api = chain.getApi();
@@ -45,19 +51,18 @@ export function MarketScreen() {
     setTrading(readTradingEnabled(api));
   }, [chain.status, chain.getApi]);
 
-  const collectionKey = chain.collections === null ? null : chain.collections.map((collection) => collection.id).join(",");
-
   useEffect(() => {
     const api = chain.getApi();
-    if (chain.status !== "live" || !api || collectionKey === null) return;
+    if (chain.status !== "live" || !api) return;
     let cancelled = false;
+    scanGeneration.current += 1;
     setScanState("reading");
     setScanError(null);
-    const ids = collectionKey ? collectionKey.split(",") : [];
-    void scanListings(api, ids)
+    setScanComplete(false); setScanCursor(null); setScanBlock(null); setScanned(0);
+    void readListingsPage(api)
       .then((next) => {
         if (cancelled) return;
-        setListings(next);
+        setListings(next.rows); setScanCursor(next.nextCursor); setScanBlock(next.blockHash); setScanComplete(next.complete); setScanned(next.scanned);
         setScanState("ready");
       })
       .catch((cause: unknown) => {
@@ -69,7 +74,18 @@ export function MarketScreen() {
     return () => {
       cancelled = true;
     };
-  }, [chain.status, chain.getApi, collectionKey]);
+  }, [chain.status, chain.getApi]);
+
+  async function loadMoreListings() {
+    const api = chain.getApi(); if (!api || !scanCursor || !scanBlock || scanState === "reading") return;
+    const generation = scanGeneration.current;
+    setScanState("reading");
+    try {
+      const next = await readListingsPage(api, { cursor: scanCursor, blockHash: scanBlock });
+      if (generation !== scanGeneration.current) return;
+      setListings(rows => [...(rows ?? []), ...next.rows]); setScanCursor(next.nextCursor); setScanComplete(next.complete); setScanned(value => value + next.scanned); setScanState("ready");
+    } catch (cause) { if (generation === scanGeneration.current) { setScanError(errorText(cause)); setScanState("error"); } }
+  }
 
   const tradingOff = trading !== true;
   const saleKey = `${collectionId.trim()}:${itemId.trim()}`;
@@ -272,13 +288,12 @@ export function MarketScreen() {
       </Panel>
       <Panel>
         <div className="border-b border-line px-4 py-3 text-sm font-medium">Listed items</div>
+        <p className="px-4 pt-3 text-xs leading-6 text-muted">{scanBlock ? `${scanned} price entries checked at snapshot ${scanBlock.slice(0, 12)}… · ${scanComplete ? "Complete at this snapshot" : "Partial scan — more pages available"}` : "Enumerating stored price keys; no collection or item-ID probe limit."}</p>
         {scanState === "reading" || (listings === null && scanState !== "error") ? (
           <p className="px-4 py-6 text-sm text-muted">
             {chain.status === "connecting"
               ? "Waiting for the testnet connection."
-              : chain.collections === null
-                ? "The collection index is unavailable, so listings were not scanned."
-                : "Reading item prices."}
+              : "Reading the next page of item prices."}
           </p>
         ) : scanState === "error" ? (
           <p className="px-4 py-6 text-sm text-warn">
@@ -286,7 +301,7 @@ export function MarketScreen() {
           </p>
         ) : listings === null || listings.length === 0 ? (
           <p className="px-4 py-6 text-sm leading-6 text-muted">
-            No price was found on items 0–23 in the known collections. A missing row is not a floor price of zero.
+            {scanComplete ? "No listed item was found in stored price entries at this snapshot." : "No listed item was found in the pages checked so far. More entries remain to be searched."}
           </p>
         ) : (
           <div className="max-w-full overflow-x-auto">
@@ -325,6 +340,7 @@ export function MarketScreen() {
             </table>
           </div>
         )}
+        {scanCursor && <button type="button" className="m-4 text-sm text-violet" disabled={scanState === "reading"} onClick={() => void loadMoreListings()}>Load next page of listings</button>}
       </Panel>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Panel className="space-y-4 p-4">

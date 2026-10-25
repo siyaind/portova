@@ -6,11 +6,13 @@ export type TrackedTx = {
   genesisHash?: string; account?: string; createdAt?: number; checkedAt?: number;
   fromBlock?: number; blockHash?: string; blockNumber?: number; extrinsicIndex?: number;
   searchCursor?: number; recoveryRequested?: boolean; recoveryMessage?: string;
+  estimatedFee?: string; feeBudget?: string; actualFee?: string; feeTip?: string; preflightBlockHash?: string; runtimeVersion?: string; call?: string;
 };
 const PHASES = new Set<TxStatus>(["signing", "submitted", "included", "finalized", "failed", "ambiguous"]);
 export const isExtrinsicHash = (value: unknown): value is string => typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
 const number = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const text = (value: unknown, max: number) => typeof value === "string" ? value.replace(/[\u0000-\u001f]/g, "").trim().slice(0, max) || undefined : undefined;
+const fee = (value: unknown) => typeof value === "string" && /^\d{1,39}$/.test(value) ? value : undefined;
 
 export function normalizeTx(entry: unknown): TrackedTx | null {
   if (!entry || typeof entry !== "object") return null;
@@ -26,6 +28,8 @@ export function normalizeTx(entry: unknown): TrackedTx | null {
     fromBlock: number(record.fromBlock), blockHash: isExtrinsicHash(record.blockHash) ? record.blockHash.toLowerCase() : undefined,
     blockNumber: number(record.blockNumber), extrinsicIndex: number(record.extrinsicIndex), searchCursor: number(record.searchCursor),
     recoveryRequested: record.recoveryRequested === true, recoveryMessage: text(record.recoveryMessage, 400),
+    estimatedFee: fee(record.estimatedFee), feeBudget: fee(record.feeBudget), actualFee: fee(record.actualFee), feeTip: fee(record.feeTip),
+    preflightBlockHash: isExtrinsicHash(record.preflightBlockHash) ? record.preflightBlockHash : undefined, runtimeVersion: text(record.runtimeVersion, 100), call: text(record.call, 100),
   };
 }
 
@@ -67,6 +71,7 @@ export function importReceipts(raw: string, genesisHash: string): TrackedTx[] {
     const item = normalizeTx(entry);
     if (!item || (item.genesisHash && item.genesisHash !== genesisHash.toLowerCase())) return [];
     return [{ ...item, id: crypto.randomUUID(), genesisHash: genesisHash.toLowerCase(), status: "ambiguous" as const,
+      actualFee: undefined, feeTip: undefined, account: undefined,
       error: "Imported record. Its outcome must be verified against the chain.", checkedAt: undefined,
       recoveryRequested: false, searchCursor: undefined, recoveryMessage: undefined }];
   });

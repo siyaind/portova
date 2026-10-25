@@ -11,6 +11,7 @@ export type CreatorProject = {
   assetId: string;
   collectionId: string;
   poolLpToken: string;
+  /** Browser-local balance/withdrawal reference; does not establish project revenue or a payment route. */
   proceeds: string;
 };
 
