@@ -81,7 +81,7 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
     const item = items.filter((row) => row.hash && ["submitted", "included", "ambiguous"].includes(row.status)
       && (!row.genesisHash || row.genesisHash === TESTNET_GENESIS)
       && (!row.checkedAt || Date.now() - row.checkedAt >= (row.recoveryRequested ? 5_000 : 20_000)))
-      .sort((a, b) => (a.checkedAt ?? 0) - (b.checkedAt ?? 0))[0];
+      .sort((a, b) => Number(!!b.recoveryRequested) - Number(!!a.recoveryRequested) || (a.checkedAt ?? 0) - (b.checkedAt ?? 0))[0];
     if (!item?.hash) return;
     recoveryBusy.current = true; setRecovering(true);
     void reconcileReceipt(api, item.hash, {
@@ -90,6 +90,9 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
       maxBlocks: item.recoveryRequested ? 64 : 24,
     }).then((result) => {
       if (!alive.current || context.current.chain.getApi() !== api) return;
+      // A manual block hint or a newer subscription supersedes this in-flight read.
+      const latest = itemsRef.current.find(row => row.id === item.id);
+      if (!latest || latest.changeId !== item.changeId) return;
       const settled = result.chain === "finalized" || result.chain === "failed";
       const next = result.chain === "unchecked" ? {} : outcomeAfterWait({ hash: item.hash, sawIncluded: item.status === "included", chain: result.chain });
       patch(item.id, { ...next, genesisHash: TESTNET_GENESIS, checkedAt: Date.now(),

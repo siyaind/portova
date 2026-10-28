@@ -23,12 +23,13 @@ export function useWalletOperation(draft: unknown) {
   current.current = { ...context, revision: last.current.revision };
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const expectedApi = api, expectedAccount = context.account;
+  const walletVersion = wallet.getVersion();
   const guard = walletOperation(current.current, () => {
     const connectedApi = chain.getApi();
-    return { ...current.current, live: alive.current && current.current.live && connectedApi === expectedApi && connectedApi?.isConnected === true,
+    return { ...current.current, live: alive.current && current.current.live && connectedApi === expectedApi && connectedApi?.isConnected === true && navigator.onLine,
       genesisHash: connectedApi?.genesisHash.toHex() ?? null,
       runtime: connectedApi ? `${connectedApi.runtimeVersion.specName}:${connectedApi.runtimeVersion.specVersion}` : null,
-      revision: last.current.revision };
+      revision: wallet.getVersion() === walletVersion ? last.current.revision : -1 };
   });
   async function signAndSend(...args: Parameters<typeof submit>) {
     guard.assertCurrent();

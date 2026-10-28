@@ -273,8 +273,9 @@ export function buildAddLiquidity(
   amount1Min: bigint,
   amount2Min: bigint,
   mintTo: string,
+  prepareLpAccount = false,
 ) {
-  return api.tx.assetConversion.addLiquidity(
+  const add = api.tx.assetConversion.addLiquidity(
     encodeAsset(pool.asset1),
     encodeAsset(pool.asset2),
     amount1,
@@ -283,6 +284,10 @@ export function buildAddLiquidity(
     amount2Min,
     mintTo,
   );
+  // Deposit-backed LP accounts avoid the runtime consumer-reference limit.
+  if (!prepareLpAccount) return add;
+  if (!api.tx.poolAssets?.touch) throw Error("LP account setup is unavailable on this runtime.");
+  return api.tx.utility.batchAll([api.tx.poolAssets.touch(pool.lpToken), add]);
 }
 
 export function buildRemoveLiquidity(

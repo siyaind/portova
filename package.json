@@ -10,6 +10,7 @@
     "test": "node --experimental-strip-types --test lib/*.test.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "@polkadot/api": "17.0.2",
     "@polkadot/extension-dapp": "0.64.1",
     "@tanstack/react-query": "5.104.4",
@@ -17,6 +18,7 @@
     "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "server-only": "^0.0.1",
     "viem": "2.57.7",
     "wagmi": "3.7.7"
   },

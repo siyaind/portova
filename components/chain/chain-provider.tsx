@@ -38,14 +38,31 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
     let cursor: string | null = null, blockHash: string | undefined;
     let rows: Array<AssetRow | CollectionSummary | PoolView> = [];
     try {
+      // Refresh must include recently finalized objects, even if the shared head pointer is cached.
+      blockHash = (await api.rpc.chain.getFinalizedHead()).toHex();
+      const snapshotNumber = (await api.rpc.chain.getHeader(blockHash)).number.toString();
       do {
-        const page: { rows: Array<AssetRow | CollectionSummary | PoolView>; blockHash: string; nextCursor: string | null; complete: boolean } = kind === "assets" ? await readAssetPage(api, cursor, blockHash) : kind === "collections" ? await readCollectionPage(api, { cursor, blockHash }) : await readPoolPage(api, cursor, blockHash);
+        type Page = { rows: Array<AssetRow | CollectionSummary | PoolView>; blockHash: string; nextCursor: string | null; complete: boolean; fetchedAt?: number; blockNumber?: string };
+        let page: Page;
+        try {
+          const params = new URLSearchParams({ kind });
+          if (cursor) params.set("cursor", cursor);
+          if (blockHash) params.set("blockHash", blockHash);
+          const response = await fetch(`/api/chain/discovery?${params}`, { signal: AbortSignal.timeout(8000), cache: "no-store" });
+          if (!response.ok) throw Error("Shared discovery unavailable.");
+          const data = await response.json();
+          if (data.genesisHash !== TESTNET_GENESIS || !Array.isArray(data.rows) || !/^0x[0-9a-fA-F]{64}$/.test(data.blockHash) || (blockHash && data.blockHash !== blockHash)) throw Error("Invalid discovery snapshot.");
+          page = data;
+        } catch {
+          page = kind === "assets" ? await readAssetPage(api, cursor, blockHash) : kind === "collections" ? await readCollectionPage(api, { cursor, blockHash }) : await readPoolPage(api, cursor, blockHash);
+        }
+        page.blockNumber ??= snapshotNumber;
         if (!current()) return;
         rows = [...rows, ...page.rows]; cursor = page.nextCursor; blockHash = page.blockHash;
         if (kind === "assets") setAssets(rows as AssetRow[]);
         else if (kind === "collections") setCollections(rows as CollectionSummary[]);
         else setPools(rows as PoolView[]);
-        setDiscovery(old => ({ ...old, [kind]: { loading: !page.complete, complete: page.complete, scanned: rows.length, blockHash, error: null } }));
+        setDiscovery(old => ({ ...old, [kind]: { loading: !page.complete, complete: page.complete, scanned: rows.length, blockHash, fetchedAt: page.fetchedAt ?? Date.now(), blockNumber: page.blockNumber, error: null } }));
       } while (cursor);
     } catch (cause) {
       if (current()) setDiscovery(old => ({ ...old, [kind]: { loading: false, complete: false, scanned: rows.length, blockHash, error: errorText(cause) } }));
@@ -58,6 +75,11 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     alive.current = true;
     let cancelled = false, generation = 0, unsubscribe: (() => void) | undefined;
+    let lastHead = Date.now();
+    const offline = () => { setStatus("unavailable"); setError("Your browser is offline. Reconnect before signing or refreshing."); };
+    const online = () => { const api = apiRef.current; if (api?.isConnected) void ready(api); };
+    window.addEventListener("offline", offline); window.addEventListener("online", online);
+    const heartbeat = window.setInterval(() => { if (Date.now() - lastHead > 90000) { setStatus("unavailable"); setError("The node has not delivered a recent block. Signing is paused until the connection recovers."); } }, 15000);
     async function ready(api: ApiPromise) {
       const ticket = ++generation;
       try {
@@ -66,17 +88,17 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
         if (cancelled || ticket !== generation) return;
         setChainName(name.toString()); setBlockNumber(header.number.toString());
         unsubscribe?.();
-        unsubscribe = await api.rpc.chain.subscribeNewHeads(head => { if (!cancelled) setBlockNumber(head.number.toString()); });
+        unsubscribe = await api.rpc.chain.subscribeNewHeads(head => { if (!cancelled) { lastHead = Date.now(); setBlockNumber(head.number.toString()); if (navigator.onLine) { setStatus("live"); setError(null); } } });
         if (cancelled || ticket !== generation) { unsubscribe?.(); return; }
         // Discovery failures do not disable independent account reads or signing.
-        setStatus("live"); setError(null);
+        if (navigator.onLine) { setStatus("live"); setError(null); } else offline();
         void Promise.allSettled([refreshAssets(), refreshCollections(), refreshPools()]);
       } catch (cause) { if (!cancelled && ticket === generation) { setStatus("unavailable"); setError(errorText(cause)); } }
     }
     void (async () => {
       try {
         const { ApiPromise, WsProvider } = await import("@polkadot/api");
-        const api = await ApiPromise.create({ provider: new WsProvider(SUBSTRATE_WS, 2_500) });
+        const api = await ApiPromise.create({ provider: new WsProvider(SUBSTRATE_WS, 2_500, undefined, 15000) });
         if (cancelled) { await api.disconnect(); return; }
         apiRef.current = api;
         api.on("disconnected", () => {
@@ -89,7 +111,7 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
         await ready(api);
       } catch (cause) { if (!cancelled) { setStatus("unavailable"); setError(errorText(cause)); } }
     })();
-    return () => { cancelled = true; generation++; alive.current = false; unsubscribe?.(); const api = apiRef.current; apiRef.current = null; void api?.disconnect(); };
+    return () => { window.clearInterval(heartbeat); window.removeEventListener("offline", offline); window.removeEventListener("online", online); cancelled = true; generation++; alive.current = false; unsubscribe?.(); const api = apiRef.current; apiRef.current = null; void api?.disconnect(); };
   }, [refreshAssets, refreshCollections, refreshPools]);
   const getApi = useCallback(() => apiRef.current, []);
   const readAccountFor = useCallback(async (address: string, onNative?: (snapshot: AccountSnapshot) => void): Promise<AccountSnapshot> => {

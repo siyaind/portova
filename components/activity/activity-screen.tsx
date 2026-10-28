@@ -31,7 +31,7 @@ export function ActivityScreen() {
     if (blockNumber !== undefined && (!/^\d+$/.test(height.trim()) || !Number.isSafeInteger(blockNumber))) { setMessage("The inclusion block must be a whole block number."); return; }
     const existing = txs.items.find((item) => item.hash?.toLowerCase() === hash.trim().toLowerCase());
     if (existing && ["finalized", "failed"].includes(existing.status)) { setMessage("This hash already has a recorded result below."); return; }
-    const record = { blockNumber, fromBlock: 0, recoveryRequested: true, checkedAt: undefined, searchCursor: undefined, recoveryMessage: "Recovery queued. This does not submit a transaction." };
+    const record = { ...(blockNumber !== undefined ? { blockHash: undefined, blockNumber } : {}), fromBlock: 0, recoveryRequested: true, checkedAt: undefined, searchCursor: undefined, recoveryMessage: "Recovery queued. This does not submit a transaction." };
     if (existing) txs.patch(existing.id, record);
     else txs.push({ id: crypto.randomUUID(), label: "Transaction lookup", status: "ambiguous", hash: hash.trim(), genesisHash: TESTNET_GENESIS, ...record });
     setMessage(blockNumber === undefined ? "Searching older blocks in resumable pages. A known inclusion block is much faster." : `Checking block ${blockNumber} and its dispatch events.`);

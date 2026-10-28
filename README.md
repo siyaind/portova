@@ -21,7 +21,7 @@ Track: Ecosystem DApps, Portaldot Hacker House 2026.
 | Testnet explorer | https://scanner-testnet-v3.portaldot.dev |
 | Verified genesis | `0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd` |
 
-There is no required environment file. Those endpoints are the defaults in `lib/network.ts`. This build does not talk to any other chain.
+Chain features need no environment file; endpoints default to `lib/network.ts`. Optional wallet-authenticated cloud projects use Postgres, and shared discovery/rate limiting use Redis. See [cloud setup and acceptance checks](docs/CLOUD_PROJECTS.md). This build does not talk to any other chain.
 
 ## What is on chain
 

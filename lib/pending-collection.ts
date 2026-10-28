@@ -81,6 +81,8 @@ export function launchStage(record: PendingCollectionLaunch | null): "new" | "cr
   return record.collectionId && record.createStatus === "finalized" ? "ready-to-finish" : "create-pending";
 }
 export function updateLaunch(record: PendingCollectionLaunch, step: "create" | "finish", update: TxUpdate): PendingCollectionLaunch {
+  const current = step === "finish" ? record.finishStatus : record.createStatus;
+  if (current === "finalized" && update.status !== current) return record;
   const status = update.notBroadcast ? "failed" : update.status;
   if (step === "finish") return { ...record, finishHash: update.hash ?? record.finishHash, finishStatus: status, finishBlockHash: update.blockHash ?? record.finishBlockHash };
   return { ...record, createHash: update.hash ?? record.createHash, createStatus: status,

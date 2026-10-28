@@ -31,3 +31,8 @@ Recovery saves inclusion hints and bounded search checkpoints. RPC calls have ti
 Projects and receipts are browser-local, not encrypted custody or a server archive. Export backups before clearing site data. Storage failure is surfaced with an export link. Portova operates no indexer, faucet or bridge. Public RPC availability and testnet administration remain external dependencies.
 
 Automated wallet tests use fake adapters and execute the actual submission helper. Read-only evidence capture queries the public chain. No human extension signature or new treasury transfer was executed in this update. See [QA](submission/QA.md) for the remaining manual checks.
+
+
+## October 28 cloud boundary
+
+Optional project storage now adds server routes, Postgres and Redis. Each private read/write uses a single-use wallet message challenge; cloud updates compare owner and revision. Public access is opt-in and revoked by an authenticated unpublished save. Server secrets never use NEXT_PUBLIC variables. Shared caching applies only to finalized discovery; signing reads remain direct. See [CLOUD_PROJECTS.md](CLOUD_PROJECTS.md) for provisioning, limitations and acceptance checks.

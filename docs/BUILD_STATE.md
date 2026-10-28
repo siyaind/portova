@@ -1,8 +1,10 @@
 # Build state
 
-Updated October 25, 2026. This document describes the current implementation; earlier phase snapshots remain in Git history.
+Updated October 28, 2026. This document describes the current implementation; earlier phase snapshots remain in Git history.
 
-Latest follow-up: `/launch` provides a saved guided creator journey with finalized object linking, optional native liquidity and Launch Health. Balance snapshots expose freshness/partial reads, discovery no longer gates network readiness, NFT/receipt/project storage coordinates across tabs, and wallet-modal accessibility/security headers are improved. 84 automated tests pass. Details: [GUIDED_LAUNCH.md](GUIDED_LAUNCH.md). Real-wallet acceptance remains assigned to the owner.
+October 28 follow-up: wallet-context cancellation, terminal receipt cleanup, NFT permission checks/retry, LP-account preparation and initial-deposit checks, cost reviews, stale-tab conflict protection, storage-safe startup, LP portfolio positions, and optional signed cloud projects with Redis discovery caching. Infrastructure and real-wallet acceptance are separate from code completion. See [CLOUD_PROJECTS.md](CLOUD_PROJECTS.md).
+
+Previous follow-up: `/launch` provides a saved guided creator journey with finalized object linking, optional native liquidity and Launch Health. Balance snapshots expose freshness/partial reads, discovery no longer gates network readiness, NFT/receipt/project storage coordinates across tabs, and wallet-modal accessibility/security headers are improved. 84 automated tests pass. Details: [GUIDED_LAUNCH.md](GUIDED_LAUNCH.md). Real-wallet acceptance remains assigned to the owner.
 
 October 25 code follow-up: all signing routes share context guards; both NFT routes share durable launch recovery; discovery uses storage pages; receipts record estimated and actual fees; Studio includes Creator Launch Health. The coding checks pass with 68 tests. Real-wallet testing is assigned to the user. Details: REVIEW_FOLLOWUP.md.
 

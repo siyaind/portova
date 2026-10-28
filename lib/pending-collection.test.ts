@@ -60,3 +60,10 @@ test("saved NFT settings cannot inject call authority or accept out-of-range ite
   assert.equal(parsePendingLaunch(JSON.stringify({ ...saved, settings: { ...saved.settings, itemId: 4_294_967_296 } })), null);
   assert.equal(parsePendingLaunch(JSON.stringify({ ...saved, settings: { ...saved.settings, price: "not-a-price" } })), null);
 });
+
+test("finalized NFT checkpoints resist stale events while failed finish attempts remain retryable", () => {
+  const complete = { ...record(), createStatus: "finalized" as const, finishStatus: "finalized" as const };
+  assert.equal(updateLaunch(complete, "finish", { status: "submitted" }).finishStatus, "finalized");
+  const failed = { ...complete, finishStatus: "failed" as const };
+  assert.equal(updateLaunch(failed, "finish", { status: "signing" }).finishStatus, "signing");
+});

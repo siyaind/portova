@@ -336,7 +336,7 @@ export function CreateTokenForm({ projectId, initialName = "" }: { projectId?: s
           {formError ? <p className="text-sm leading-6 text-warn">{formError}</p> : null}
           <button
             type="submit"
-            disabled={submitting || chain.status !== "live"}
+            disabled={submitting || chain.status !== "live" || (!!signer && problems.length > 0)}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting
