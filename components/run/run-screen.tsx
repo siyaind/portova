@@ -7,7 +7,7 @@ import { useProject } from "@/components/project/project-provider";
 import { ProceedsFigure } from "@/components/project/proceeds-figure";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
-import { PageIntro, Panel, StatusPill } from "@/components/ui";
+import { Button, PageIntro, Panel, StatusPill } from "@/components/ui";
 import {
   assetIdTaken,
   buildCreateMintTx,
@@ -36,6 +36,7 @@ import { parseRun, rememberEvidence, type RunEvidence, type RunStepName } from "
 import { outcomeWithoutHash, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { useCollectionLaunch } from "@/components/nft/use-collection-launch";
+import { checkLiquidityDeposit } from "@/lib/liquidity-checks";
 
 const FIELD = "mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-sm";
 const STORAGE_KEY = "portova.testnet-run.v1";
@@ -64,7 +65,19 @@ export function RunScreen() {
   const [swapPreviewState, setSwapPreviewState] = useState<"idle" | "reading" | "ready" | "none">("idle");
   const [assetReady, setAssetReady] = useState(false);
   const nftLaunch = useCollectionLaunch();
-  const { signAndSend } = useWalletOperation({ assetId, collectionId, tokenName, tokenSymbol, collectionUri, nativeAmount, tokenAmount, swapAmount });
+  const [costReview, setCostReview] = useState<{ label: string; fee: string; total: string; budget: string } | null>(null);
+  const approval = useRef<((accepted: boolean) => void) | null>(null);
+  function closeReview(accepted: boolean) { approval.current?.(accepted); approval.current = null; setCostReview(null); }
+  useEffect(() => () => { approval.current?.(false); }, []);
+  useEffect(() => { closeReview(false); }, [signer?.address, assetId, collectionId, tokenName, tokenSymbol, collectionUri, nativeAmount, tokenAmount, swapAmount]);
+  async function confirmCosts(label: string, review: { estimatedFee: bigint; fee: bigint; nativeNeed: bigint }) {
+    const expires = Date.now() + 60000;
+    const accepted = await new Promise<boolean>(resolve => { approval.current = resolve; setCostReview({ label, fee: review.estimatedFee.toString(), budget: review.fee.toString(), total: review.nativeNeed.toString() }); });
+    if (!accepted || !operationCurrent() || Date.now() > expires) { setNotice("Review cancelled, expired, or changed. No wallet request was opened."); return false; }
+    return true;
+  }
+
+  const { signAndSend, current: operationCurrent } = useWalletOperation({ assetId, collectionId, tokenName, tokenSymbol, collectionUri, nativeAmount, tokenAmount, swapAmount });
   useEffect(() => {
     if (!nftLaunch.launch) return;
     setCollectionUri(nftLaunch.launch.settings.collectionMetadata);
@@ -96,13 +109,13 @@ export function RunScreen() {
 
   useEffect(() => {
     let saved: string | null = null;
-    try { saved = window.sessionStorage.getItem("portova.testnet-run.asset.v1"); } catch { /* The visible draft still works without optional persistence. */ }
+    try { saved = window.localStorage.getItem("portova.testnet-run.asset.v1") ?? window.sessionStorage.getItem("portova.testnet-run.asset.v1"); } catch { /* The visible draft still works without optional persistence. */ }
     if (saved && /^\d+$/.test(saved)) setAssetId(saved);
     setSuggestAsset(true);
   }, []);
 
   useEffect(() => {
-    try { if (/^\d+$/.test(assetId)) window.sessionStorage.setItem("portova.testnet-run.asset.v1", assetId); } catch { /* Optional draft persistence. */ }
+    try { if (/^\d+$/.test(assetId)) window.localStorage.setItem("portova.testnet-run.asset.v1", assetId); } catch { /* Optional draft persistence. */ }
   }, [assetId]);
 
   useEffect(() => {
@@ -229,6 +242,9 @@ export function RunScreen() {
       }
     }
     setBusy(buttonLabel ?? label);
+    if (!(await confirmCosts(label, review))) { setBusy(null); return null; }
+    const latest = await reviewExtrinsic(api, tx, signer.address, nativeDebits);
+    if (!latest.ok || latest.nativeNeed > review.nativeNeed) { setNotice("Balance or fees changed. Review again."); setBusy(null); return null; }
     const id = crypto.randomUUID();
     txs.push({ id, label, status: "signing" });
     let signingStarted = false;
@@ -380,6 +396,7 @@ export function RunScreen() {
       setNotice("The testnet connection is unavailable.");
       return;
     }
+    if (findNativePool(chain.pools, assetId)) { setNotice("This pool already exists. Continue with liquidity."); return; }
     const poolConstants = readPoolConstants(api);
     const setup = poolConstants && /native/i.test(poolConstants.poolSetupFeeAsset) ? planck(poolConstants.poolSetupFee) : null;
     const tx = buildCreatePool(api, left, right);
@@ -443,7 +460,8 @@ export function RunScreen() {
     }
     const nativeIn = pool.asset1.kind === "native" ? deposit.amount1 : pool.asset2.kind === "native" ? deposit.amount2 : 0n;
     const lpDeposit = await missingLpAccountDeposit(api, pool.lpToken, signer.address, position.blockHash);
-    const tx = buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address);
+    await checkLiquidityDeposit(api, { ...pool, ...position }, signer.address, deposit.amount1, deposit.amount2, position.blockHash);
+    const tx = buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address, lpDeposit !== null && lpDeposit > 0n);
     const result = await sign(
       `Add liquidity LP ${pool.lpToken}`,
       tx,
@@ -452,6 +470,7 @@ export function RunScreen() {
       position.blockHash,
       async () => {
         const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
+        await checkLiquidityDeposit(api, { ...pool, ...next }, signer.address, deposit.amount1, deposit.amount2, next.blockHash);
         const nextReserve1 = next.reserve1 && /^\d+$/.test(next.reserve1) ? BigInt(next.reserve1) : null;
         const nextReserve2 = next.reserve2 && /^\d+$/.test(next.reserve2) ? BigInt(next.reserve2) : null;
         return depositStillExecutable(deposit.amount1, deposit.amount2, min1, min2, nextReserve1, nextReserve2);
@@ -461,7 +480,7 @@ export function RunScreen() {
     if (!result) return;
     record("liquidity", `Add liquidity LP ${pool.lpToken}`, result, result.status === "finalized" ? pool.lpToken : undefined);
     if (result.status === "finalized" || result.status === "included") void chain.refreshPools().catch(() => undefined);
-    } finally {
+    } catch (cause) { setNotice(errorText(cause)); } finally {
       busyRef.current = false;
       setBusy(null);
     }
@@ -516,6 +535,9 @@ export function RunScreen() {
         return;
       }
       setBusy("Sign swap");
+      if (!(await confirmCosts(`Swap ${NATIVE_SYMBOL}`, review))) return;
+      const latest = await reviewExtrinsic(api, tx, signer.address, [amount]);
+      if (!latest.ok || latest.nativeNeed > review.nativeNeed) { setNotice("Balance or fees changed. Review again."); return; }
       tracked = true;
       txs.push({ id, label: `Swap ${NATIVE_SYMBOL}`, status: "signing" });
       const { web3FromSource } = await import("@polkadot/extension-dapp");
@@ -570,6 +592,7 @@ export function RunScreen() {
 
   return (
     <div className="space-y-6">
+      {costReview && <Panel className="space-y-3 border-violet p-5"><h2 className="font-semibold">Review: {costReview.label}</h2><p className="break-all text-xs">Signing account: {signer?.address}</p><p className="text-sm">Estimated fee: {formatUnits(costReview.fee, 14)} tPOT · Fee budget: {formatUnits(costReview.budget, 14)} tPOT</p><p className="text-sm">Total native requirement, including deposits and fee reserve: {formatUnits(costReview.total, 14)} tPOT</p><p className="text-xs text-muted">Review the amounts and object IDs in the form below. This review expires after 60 seconds.</p><div className="flex gap-3"><Button onClick={() => closeReview(true)}>Continue to wallet</Button><Button onClick={() => closeReview(false)}>Cancel review</Button></div></Panel>}
       <PageIntro
         eyebrow="Testnet run"
         title="Signed execution"
@@ -600,13 +623,13 @@ export function RunScreen() {
           <label className="block text-xs text-muted">Collection metadata URI<input className={FIELD} value={collectionUri} disabled={Boolean(nftLaunch.launch)} onChange={(event) => setCollectionUri(event.target.value)} /></label>
           <p className="text-xs leading-5 text-faint">Two signatures: 1. Create the collection. 2. Add the saved metadata and mint. The same wallet-bound checkpoint is available in the NFT launchpad after a reload.</p>
           <Action busy={busy} label={nftLaunch.stage === "ready-to-finish" ? "Finish saved NFT launch" : "Sign NFT"} onClick={() => void createNft()} disabled={signer !== null && (!nftLaunch.ready || (nftLaunch.launch !== null && nftLaunch.stage !== "ready-to-finish"))} />
-          {nftLaunch.launch && <div className="space-y-2 text-xs"><p>Saved launch: {nftLaunch.stage.replaceAll("-", " ")}</p><button type="button" className="mr-3 text-violet" disabled={nftLaunch.checking} onClick={() => void nftLaunch.recover()}>Check saved launch</button><Link href="/nft-launchpad" className="text-violet">Open full NFT launchpad</Link></div>}
+          {nftLaunch.launch && <div className="space-y-2 text-xs"><p>Saved launch: {nftLaunch.stage.replaceAll("-", " ")}</p><button type="button" className="mr-3 text-violet" disabled={nftLaunch.checking} onClick={() => void nftLaunch.recover()}>Check saved launch</button><Link href="/nft-launchpad" className="text-violet">Open full NFT launchpad</Link>{["complete", "create-failed"].includes(nftLaunch.stage) && <button type="button" className="block min-h-11 text-violet" disabled={nftLaunch.checking || !!busy} onClick={() => void nftLaunch.clear()}>Start another collection (keep existing on-chain objects)</button>}</div>}
           {nftLaunch.error && <p role="alert" className="text-xs text-warn">{nftLaunch.error}</p>}
         </Panel>
         <Panel className="space-y-3 p-4">
           <h2 className="text-sm font-medium">3. Pool</h2>
           <p className="text-sm leading-6 text-muted">{pool ? `Pool LP ${pool.lpToken} is already stored for ${NATIVE_SYMBOL} and asset ${assetId}.` : `No stored pool pairs ${NATIVE_SYMBOL} with asset ${assetId || "the chosen id"}.`}</p>
-          <Action busy={busy} label="Sign pool" disabled={!pool && !assetReady} onClick={() => void createPool()} />
+          <Action busy={busy} label="Sign pool" disabled={!!pool || !assetReady} onClick={() => void createPool()} />
           {!pool && !assetReady ? <p className="text-xs leading-5 text-faint">Sign pool stays off until asset {assetId || "the chosen id"} is on chain.</p> : null}
         </Panel>
         <Panel className="space-y-3 p-4">

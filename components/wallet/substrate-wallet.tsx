@@ -25,6 +25,7 @@ type SubstrateValue = {
   connect: () => Promise<void>;
   select: (address: string) => void;
   disconnect: () => void;
+  getVersion: () => number;
 };
 
 const SubstrateContext = createContext<SubstrateValue | null>(null);
@@ -108,6 +109,7 @@ export function SubstrateWalletProvider({
       }
       try { window.sessionStorage.setItem("portova.substrate.selected", chosen.address); } catch { /* Optional persistence. */ }
       setStatus("ready");
+      setError(null);
       try { window.sessionStorage.setItem("portova.substrate.connected", "1"); } catch { /* Optional persistence. */ }
     } catch (cause) {
       if (ticket !== generation.current) return;
@@ -121,6 +123,7 @@ export function SubstrateWalletProvider({
       const match = accounts.find((account) => account.address === address);
       if (!match) return;
       setSelected(match);
+      generation.current += 1;
       try { window.sessionStorage.setItem("portova.substrate.selected", match.address); } catch { /* Optional persistence. */ }
     },
     [accounts],
@@ -154,6 +157,7 @@ export function SubstrateWalletProvider({
         setAccounts(next);
         const previous = selectedRef.current;
         const stillAllowed = next.find((account) => account.address === previous?.address && account.source === previous.source) ?? null;
+        if (previous?.address !== stillAllowed?.address || previous?.source !== stillAllowed?.source) generation.current += 1;
         setSelected(stillAllowed);
         if (previous && !stillAllowed) setError("The selected account is no longer shared by the wallet. Select an authorized account before signing.");
       });
@@ -163,7 +167,7 @@ export function SubstrateWalletProvider({
   }, [status]);
 
   const value = useMemo(
-    () => ({ status, accounts, selected, error, connect, select, disconnect }),
+    () => ({ status, accounts, selected, error, connect, select, disconnect, getVersion: () => generation.current }),
     [status, accounts, selected, error, connect, select, disconnect],
   );
 

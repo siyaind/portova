@@ -33,5 +33,5 @@ export async function guardedSignAndSend(
     if (!operation.current()) return false;
     const valid = validate ? await validate() : true;
     return valid && operation.current();
-  });
+  }, operation.current);
 }

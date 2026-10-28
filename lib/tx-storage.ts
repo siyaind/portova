@@ -23,13 +23,13 @@ export function normalizeTx(entry: unknown): TrackedTx | null {
   if (!id || !label || !record.status || !PHASES.has(record.status)) return null;
   if (record.hash !== undefined && !isExtrinsicHash(record.hash)) return null;
   return {
-    id, label, status: record.status, hash: record.hash?.toLowerCase(), error: text(record.error, 600),
+    id, label, status: record.status, hash: record.hash?.toLowerCase(), error: record.status === "finalized" ? undefined : text(record.error, 600),
     collectionId: typeof record.collectionId === "string" && /^\d+$/.test(record.collectionId) ? record.collectionId : undefined,
     genesisHash: isExtrinsicHash(record.genesisHash) ? record.genesisHash.toLowerCase() : undefined,
     account: text(record.account, 100), createdAt: number(record.createdAt), checkedAt: number(record.checkedAt),
     fromBlock: number(record.fromBlock), blockHash: isExtrinsicHash(record.blockHash) ? record.blockHash.toLowerCase() : undefined,
     blockNumber: number(record.blockNumber), extrinsicIndex: number(record.extrinsicIndex), searchCursor: number(record.searchCursor),
-    recoveryRequested: record.recoveryRequested === true, recoveryMessage: text(record.recoveryMessage, 400),
+    recoveryRequested: record.recoveryRequested === true, recoveryMessage: record.status === "finalized" ? undefined : text(record.recoveryMessage, 400),
     estimatedFee: fee(record.estimatedFee), feeBudget: fee(record.feeBudget), actualFee: fee(record.actualFee), feeTip: fee(record.feeTip),
     updatedAt: number(record.updatedAt), changeId: text(record.changeId, 100),
     projectId: text(record.projectId, 80), projectField: record.projectField && ["assetId", "collectionId", "poolLpToken"].includes(record.projectField) ? record.projectField : undefined,
@@ -86,8 +86,10 @@ export function exportReceipts(items: TrackedTx[], genesisHash: string): string 
 
 export function importReceipts(raw: string, genesisHash: string): TrackedTx[] {
   if (raw.length > 2_000_000) throw new Error("Use a receipt backup smaller than 2 MB.");
-  const data = JSON.parse(raw) as { version?: number; genesisHash?: string; receipts?: unknown[] };
-  if (!data || data.version !== 1 || data.genesisHash?.toLowerCase() !== genesisHash.toLowerCase() || !Array.isArray(data.receipts)) {
+  let data: { version?: number; genesisHash?: string; receipts?: unknown[] };
+  try { data = JSON.parse(raw); } catch { throw new Error("This file is not valid JSON. Choose an unedited Portova receipt export."); }
+  if (typeof data?.genesisHash === "string" && data.genesisHash.toLowerCase() !== genesisHash.toLowerCase()) throw new Error("This backup does not match the connected network. Import a Portaldot V3 testnet backup.");
+  if (!data || data.version !== 1 || (typeof data.genesisHash !== "string" || data.genesisHash.toLowerCase() !== genesisHash.toLowerCase()) || !Array.isArray(data.receipts)) {
     throw new Error("This is not a Portova receipt backup for the connected network.");
   }
   if (data.receipts.length > 5_000) throw new Error("Import at most 5,000 receipts at a time.");

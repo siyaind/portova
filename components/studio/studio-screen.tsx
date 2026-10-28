@@ -7,6 +7,7 @@ import { ProceedsBody, useProceedsBalance } from "@/components/project/proceeds-
 import { useProject } from "@/components/project/project-provider";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { LaunchHealth } from "@/components/studio/launch-health";
+import { CloudProjects } from "@/components/project/cloud-projects";
 import { Button, PageIntro, Panel, StatusPill } from "@/components/ui";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
 import { errorText, formatUnits } from "@/lib/format";
@@ -141,9 +142,9 @@ export function StudioScreen() {
       <PageIntro
         eyebrow="Creator studio"
         title="Project workspace"
-        body="Link a token, collection, pool and reference account, then inspect their launch health. This project record stays in your browser. The linked account is a balance and withdrawal reference; it does not establish project revenue or route sales."
+        body="Link a token, collection, pool and reference account, then inspect their launch health. Save locally, or use cloud storage below to keep a private copy or publish a shareable page. The linked account is a balance and withdrawal reference; it does not establish project revenue or route sales."
       />
-      <LaunchHealth />
+      <CloudProjects /><LaunchHealth />
       <Link href="/launch" className="inline-flex rounded-xl border border-violet/30 bg-violet/10 px-4 py-3 text-sm text-violet">{project?.launch ? "Resume guided launch ↗" : "Build this project with the launch guide ↗"}</Link>
       {stored.storageError && <p role="alert" className="text-sm text-warn">{stored.storageError}</p>}
       <form

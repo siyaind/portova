@@ -15,6 +15,8 @@ import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { isProceedsAddress } from "@/lib/project";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
+import { checkAssetMint } from "@/lib/mint-checks";
+import { sameAccount } from "@/lib/withdrawal";
 
 export function TokenProfile({ id }: { id: string }) {
   const chain = useChain();
@@ -185,6 +187,7 @@ function MintMore({ profile }: { profile: AssetProfile }) {
     const id = crypto.randomUUID();
     try {
       const constants = readAssetConstants(api);
+      await checkAssetMint(api, profile.id, signer.address);
       const hash = (await api.rpc.chain.getFinalizedHead()).toHex();
       if (!constants || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
         setMessage("The asset deposit or finalized block could not be read, so the wallet was not opened.");
@@ -209,8 +212,10 @@ function MintMore({ profile }: { profile: AssetProfile }) {
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),
+        undefined,
+        async () => { await checkAssetMint(api, profile.id, signer.address); return true; },
       );
-      if (result.status === "finalized" || result.status === "included") await chain.refreshAssets().catch(() => undefined);
+      if (result.status === "finalized" || result.status === "included") void chain.refreshAssets().catch(() => undefined);
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const outcome = outcomeWithoutHash(errorText(cause));
@@ -227,6 +232,7 @@ function MintMore({ profile }: { profile: AssetProfile }) {
       <p className="text-sm leading-6 text-muted">
         This signs assets.mint for the existing id. The issuer can mint more. A signature from another account is rejected by the chain.
       </p>
+      {signer && !sameAccount(profile.issuer, signer.address) && <p role="status" className="text-xs text-warn">Select the asset issuer to mint more tokens.</p>}
       <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
         <label className="block text-xs text-muted">
           Amount
@@ -236,8 +242,8 @@ function MintMore({ profile }: { profile: AssetProfile }) {
           Mint to
           <input className="mt-1.5 h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-xs" value={to} onChange={(event) => setTo(event.target.value)} spellCheck={false} />
         </label>
-        <button type="submit" disabled={busy || chain.status !== "live"} className="rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:opacity-50">
-          {busy ? "Waiting for the wallet…" : signer ? "Mint more" : "Connect Substrate wallet"}
+        <button type="submit" disabled={busy || chain.status !== "live" || (!!signer && !sameAccount(profile.issuer, signer.address))} className="rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:opacity-50">
+          {busy ? "Confirming transaction…" : signer ? "Mint more" : "Connect Substrate wallet"}
         </button>
       </form>
       {message ? <p className="text-sm leading-6 text-warn">{message}</p> : null}

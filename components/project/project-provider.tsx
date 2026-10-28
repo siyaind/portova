@@ -7,6 +7,7 @@ type ProjectValue = {
   ready: boolean; project: CreatorProject | null; storageError: string | null;
   save(draft: CreatorProject): Promise<string | null>; clear(): Promise<string | null>;
   attach(projectId: string, field: ProjectField, id: string, actor: string): Promise<string | null>;
+  restore(draft: CreatorProject): Promise<string | null>;
 };
 const ProjectContext = createContext<ProjectValue | null>(null);
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
@@ -41,7 +42,11 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     return null;
   }, true), [mutate, project]);
   const attach = useCallback((projectId: string, field: ProjectField, id: string, actor: string) => mutate(current => attachProjectObject(current, projectId, field, id, actor)), [mutate]);
-  const value = useMemo(() => ({ ready, project, storageError, save, clear, attach }), [ready, project, storageError, save, clear, attach]);
+  const restore = useCallback((draft: CreatorProject) => mutate(current => {
+    if (current?.id !== project?.id || current?.revision !== project?.revision) throw Error("The local project changed. Review it before loading the cloud copy.");
+    return { ...draft, revision: (current?.revision ?? 0) + 1 };
+  }), [mutate, project]);
+  const value = useMemo(() => ({ ready, project, storageError, save, clear, attach, restore }), [ready, project, storageError, save, clear, attach, restore]);
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }
 export function useProject(): ProjectValue { const value = useContext(ProjectContext); if (!value) throw Error("useProject must be used inside ProjectProvider"); return value; }

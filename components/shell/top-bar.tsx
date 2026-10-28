@@ -193,7 +193,8 @@ function searchResult(
       links: [{ href: `/collection/${query}`, label: "Open collection" }],
     };
   }
-  return { text: "Search accepts an asset id, a 0x address, or a Substrate address." };
+  const matches = assets?.filter(row => `${row.name} ${row.symbol}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8) ?? [];
+  return matches.length ? { text: "Matching tokens from the loaded network snapshot:", links: matches.map(row => ({ href: `/token/${row.id}`, label: `${row.name} (${row.symbol}) #${row.id}` })) } : { text: "No loaded token matches. Search by token name, symbol, asset ID, collection ID, or address. Discovery may still be partial." };
 }
 
 function SearchBox() {
@@ -230,7 +231,7 @@ function SearchBox() {
   return (
     <form ref={boxRef} onSubmit={onSubmit} className="relative min-w-0 flex-1">
       <label htmlFor={formId} className="sr-only">
-        Search asset id, collection id, or address
+        Search token name, symbol, asset id, collection id, or address
       </label>
       <Search
         size={15}

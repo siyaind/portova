@@ -34,3 +34,16 @@ test("a context change during an asynchronous quote check cannot reach broadcast
   await guardedSignAndSend(walletOperation(origin, () => latest), [{} as ApiPromise, tx, address, {} as Signer, () => {}, undefined, async () => { latest = { ...origin, source: "other" }; return true; }]);
   assert.equal(sends, 0);
 });
+
+test("disconnect ends a pending wallet request in the app and discards a later signature", { timeout: 3000 }, async () => {
+  let latest = { ...origin }, sends = 0;
+  let approve!: (value: { send: () => Promise<() => void> }) => void;
+  const tx = { signAndSend: async () => () => {}, signAsync: () => new Promise<{ send: () => Promise<() => void> }>(resolve => { approve = resolve; }) };
+  const pending = guardedSignAndSend(walletOperation(origin, () => latest), [{} as ApiPromise, tx, address, {} as Signer, () => {}]);
+  latest = { ...origin, account: null, revision: 2 };
+  const outcome = await pending;
+  assert.equal(outcome.notBroadcast, true);
+  approve({ send: async () => { sends++; return () => {}; } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sends, 0);
+});

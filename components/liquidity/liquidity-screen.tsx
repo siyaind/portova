@@ -36,6 +36,7 @@ import { WALLET_MOVE_WARNING, depositStillExecutable, withdrawalStillExecutable 
 import { useProject } from "@/components/project/project-provider";
 import { acquireLease } from "@/lib/browser-lock";
 import { readPools } from "@/lib/pools";
+import { checkLiquidityDeposit } from "@/lib/liquidity-checks";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink";
@@ -50,6 +51,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
   const [left, setLeft] = useState<AssetRef>({ kind: "native" });
   const [right, setRight] = useState<AssetRef>({ kind: "asset", id: assetId ?? chain.assets?.[0]?.id ?? "1" });
   const [poolLp, setPoolLp] = useState<string | null>(null);
+  useEffect(() => { const requested = new URLSearchParams(window.location.search).get("pool"); if (requested && /^\d+$/.test(requested)) setPoolLp(requested); }, []);
   const [amount1, setAmount1] = useState("");
   const [amount2, setAmount2] = useState("");
   const [lpAmount, setLpAmount] = useState("");
@@ -61,6 +63,11 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
   const amounts = useRef({ first: "", second: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const actionRef = useRef(false);
+  const [reviewPrompt, setReviewPrompt] = useState<{ label: string; fee: string; reserve: string; total: string; expires: number } | null>(null);
+  const approval = useRef<((accepted: boolean) => void) | null>(null);
+  function closeReview(accepted: boolean) { approval.current?.(accepted); approval.current = null; setReviewPrompt(null); }
+  useEffect(() => () => { approval.current?.(false); }, []);
+  useEffect(() => { approval.current?.(false); approval.current = null; setReviewPrompt(null); }, [signer?.address, amount1, amount2, lpAmount, slippage, left, right, poolLp]);
 
   const relevantPools = assetId ? chain.pools?.filter(item => [item.asset1, item.asset2].some(side => side.kind === "native") && [item.asset1, item.asset2].some(side => side.kind === "asset" && side.id === assetId)) : chain.pools;
   const pool = relevantPools?.find((item) => item.lpToken === poolLp) ?? relevantPools?.[0] ?? null;
@@ -162,6 +169,15 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
     let release: (() => void) | undefined;
     setBusy(input.label);
     try {
+      const expires = Date.now() + 60000;
+      const accepted = await new Promise<boolean>(resolve => {
+        approval.current = resolve;
+        setReviewPrompt({ label: input.label, fee: review.estimatedFee.toString(), reserve: review.fee.toString(), total: review.nativeNeed.toString(), expires });
+      });
+      if (!accepted) { report("Review cancelled. No wallet request was opened."); return; }
+      if (Date.now() > expires) throw Error("The cost review expired. Review the operation again.");
+      const fresh = await reviewExtrinsic(api, input.tx, signer.address, input.nativeDebits);
+      if (!fresh.ok || fresh.nativeNeed > review.nativeNeed) throw Error("The balance or fee changed. Review the updated operation again.");
       if (projectId) { if (project.project?.id !== projectId) throw Error("The project changed. Review its current links before signing."); const lease = await acquireLease(`portova:guided:${projectId}`, navigator.locks); release = lease.release; }
       txs.push({ id, label: input.label, status: "signing", projectId });
       const result = await signAndSend(
@@ -202,6 +218,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
         body="Create a pool, manage your deposits, and withdraw liquidity from your wallet. Every action is a separate signature, with reserves and fees read from the network."
       />
       {projectId && message && <p role="status" className="text-sm leading-6 text-warn">{message}</p>}
+      {reviewPrompt && <Panel className="space-y-3 border-violet/50 p-5"><h2 className="text-lg font-semibold">Review {reviewPrompt.label.toLowerCase()}</h2><p className="text-sm text-muted">{reviewPrompt.label === "Add liquidity" ? `Deposit ${amount1} ${pool ? assetLabel(pool.asset1, maps.symbols) : ""} + ${amount2} ${pool ? assetLabel(pool.asset2, maps.symbols) : ""}. A missing LP account is prepared in the same transaction; its deposit is reserved, not spent as a fee.` : reviewPrompt.label === "Remove liquidity" ? `Burn ${lpAmount} LP units. Max withdraws your balance; the pool's permanently locked minimum liquidity remains.` : `Create ${assetLabel(left, maps.symbols)} / ${assetLabel(right, maps.symbols)}. Pool setup is a separate operation from adding liquidity.`}</p><p className="text-sm">Estimated network fee: {formatUnits(reviewPrompt.fee, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Fee budget: {formatUnits(reviewPrompt.reserve, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Total native balance needed, including deposits/transfers: {formatUnits(reviewPrompt.total, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-xs text-faint">This review expires after 60 seconds. Your wallet approval is still required.</p><div className="flex gap-3"><button className="min-h-11 rounded-lg bg-violet px-4 text-violet-ink" onClick={() => closeReview(true)}>Continue to wallet</button><button className="min-h-11 rounded-lg border border-line px-4" onClick={() => closeReview(false)}>Cancel</button></div></Panel>}
       <Panel className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Stored pools</h2>
@@ -473,7 +490,8 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
         return;
       }
     }
-    const tx = buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address);
+    await checkLiquidityDeposit(api, { ...pool, ...position }, signer.address, deposit.amount1, deposit.amount2, position.blockHash);
+    const tx = buildAddLiquidity(api, pool, deposit.amount1, deposit.amount2, min1, min2, signer.address, lpDeposit !== null && lpDeposit > 0n);
     await sign({
       label: "Add liquidity",
       tx,
@@ -482,12 +500,13 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
       blockHash: position.blockHash,
       stillCurrent: async () => {
         const next = await readPoolPosition(api, pool.asset1, pool.asset2, pool.lpToken);
+        await checkLiquidityDeposit(api, { ...pool, ...next }, signer.address, deposit.amount1, deposit.amount2, next.blockHash);
         const nextReserve1 = next.reserve1 && /^\d+$/.test(next.reserve1) ? BigInt(next.reserve1) : null;
         const nextReserve2 = next.reserve2 && /^\d+$/.test(next.reserve2) ? BigInt(next.reserve2) : null;
         return depositStillExecutable(deposit.amount1, deposit.amount2, min1, min2, nextReserve1, nextReserve2);
       },
     });
-    } finally {
+    } catch (cause) { setAddMessage(errorText(cause)); } finally {
       actionRef.current = false;
       setBusy(null);
     }

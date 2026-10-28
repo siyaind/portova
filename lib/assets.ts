@@ -175,6 +175,7 @@ export async function signAndSend(
   onUpdate: (update: TxUpdate) => void,
   decorate?: (result: { events?: ChainEvent[] }) => Partial<TxUpdate>,
   revalidate?: () => Promise<boolean>,
+  contextCurrent?: () => boolean,
 ): Promise<TxUpdate> {
   const signWaitMs = 180_000;
   const statusWaitMs = 120_000;
@@ -185,6 +186,7 @@ export async function signAndSend(
     let sawIncluded = false;
     let broadcastStarted = false;
     let statusTimer: ReturnType<typeof setTimeout> | null = null;
+    let contextTimer: ReturnType<typeof setInterval> | undefined;
     const signTimer = setTimeout(() => {
       if (!lastHash) finish({ ...outcomeAfterWait({ sawIncluded: false, chain: "unchecked" }), notBroadcast: !broadcastStarted });
     }, signWaitMs);
@@ -192,6 +194,7 @@ export async function signAndSend(
       if (settled) return;
       settled = true;
       clearTimeout(signTimer);
+      clearInterval(contextTimer);
       if (statusTimer !== null) clearTimeout(statusTimer);
       unsubscribe?.();
       onUpdate(update);
@@ -310,6 +313,7 @@ export async function signAndSend(
           if (!settled) {
             settled = true;
             clearTimeout(signTimer);
+            clearInterval(contextTimer);
             if (statusTimer !== null) clearTimeout(statusTimer);
             reject(error);
           }
@@ -318,9 +322,12 @@ export async function signAndSend(
     const moved = {
       status: "ambiguous" as const,
       notBroadcast: true,
-      error: "The wallet, network, reviewed inputs, or chain state changed while the wallet was open. The signature was not broadcast by Portova. Review again.",
+      error: "The wallet, network, reviewed inputs, or chain state changed. Portova did not broadcast this request. Dismiss any old popup in your wallet, then review again.",
     };
     if (revalidate) {
+      if (contextCurrent) contextTimer = setInterval(() => {
+        if (!settled && !broadcastStarted && !contextCurrent()) finish(moved);
+      }, 200);
       if (!tx.signAsync) {
         finish({
           status: "ambiguous",
@@ -348,6 +355,7 @@ export async function signAndSend(
           if (!settled) {
             settled = true;
             clearTimeout(signTimer);
+            clearInterval(contextTimer);
             if (statusTimer !== null) clearTimeout(statusTimer);
             const cause = !broadcastStarted ? Object.assign(new Error(error instanceof Error ? error.message : String(error)), { notBroadcast: true }) : error;
             reject(cause);

@@ -25,6 +25,7 @@ import {
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { isProceedsAddress } from "@/lib/project";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
+import { checkNftMint } from "@/lib/mint-checks";
 
 export function CollectionProfile({ id }: { id: string }) {
   const chain = useChain();
@@ -352,6 +353,7 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
     setBusy(true);
     const id = crypto.randomUUID();
     try {
+      await checkNftMint(api, profile.id, nextItem, signer.address);
       const price = profile.price === null ? 0n : planck(profile.price);
       const tx = buildMintItem(api, Number(profile.id), nextItem, destination, profile.price);
       const review = await reviewExtrinsic(api, tx, signer.address, [price]);
@@ -369,9 +371,11 @@ function MintAnother({ profile }: { profile: CollectionProfile }) {
         signer.address,
         injected.signer,
         (update) => txs.patch(id, update),
+        undefined,
+        async () => { await checkNftMint(api, profile.id, nextItem, signer.address); return true; },
       );
       if (result.status === "finalized" || result.status === "included") {
-        await chain.refreshCollections().catch(() => undefined);
+        void chain.refreshCollections().catch(() => undefined);
       }
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {

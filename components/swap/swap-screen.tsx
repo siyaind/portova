@@ -6,7 +6,7 @@ import { Activity, ArrowDownUp, ArrowUpRight, Coins, ShieldCheck } from "lucide-
 import { useChain } from "@/components/chain/chain-provider";
 import { useTxs } from "@/components/tx/tx-tracker";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
-import { PageIntro, Panel } from "@/components/ui";
+import { Button, PageIntro, Panel } from "@/components/ui";
 import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { readAssetMinBalance } from "@/lib/chain-read";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
@@ -59,6 +59,12 @@ export function SwapScreen() {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const [costReview, setCostReview] = useState<{ fee: string; budget: string; total: string } | null>(null);
+  const approval = useRef<((accepted: boolean) => void) | null>(null);
+  function closeReview(accepted: boolean) { approval.current?.(accepted); approval.current = null; setCostReview(null); }
+  useEffect(() => () => { approval.current?.(false); }, []);
+  useEffect(() => { closeReview(false); }, [signer?.address, poolLp, flip, amount, slippage]);
+
 
   const pool = pools?.find((item) => item.lpToken === poolLp) ?? pools?.[0] ?? null;
   const { signAndSend, current: operationCurrent } = useWalletOperation({ pool: pool?.lpToken, flip, amount, slippage });
@@ -224,6 +230,15 @@ export function SwapScreen() {
         setMessage(review.message);
         return;
       }
+      const reviewExpires = Date.now() + 30000;
+      const accepted = await new Promise<boolean>(resolve => {
+        approval.current = resolve;
+        setCostReview({ fee: review.estimatedFee.toString(), budget: review.fee.toString(), total: review.nativeNeed.toString() });
+      });
+      if (!accepted) { setMessage("Review cancelled. No wallet request was opened."); return; }
+      if (!operationCurrent() || Date.now() > reviewExpires) { setMessage("The review expired or inputs changed. Review again."); return; }
+      const freshFee = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n]);
+      if (!freshFee.ok || freshFee.nativeNeed > review.nativeNeed) { setMessage("The balance or fee changed. Review again."); return; }
       const quoteStillCovers = async () => {
         const again = await quoteForSwap(api, assetIn, assetOut, amountIn);
         return again !== null && swapStillExecutable(BigInt(again.amount), freshMin);
@@ -240,7 +255,7 @@ export function SwapScreen() {
       const result = await signAndSend(api, review.tx, signer.address, injected.signer, (update) => {
         if (tracked) txs.patch(tracked, update);
       }, undefined, quoteStillCovers);
-      if (result.status === "finalized") await chain.refreshPools().catch(() => undefined);
+      if (result.status === "finalized") void chain.refreshPools().catch(() => undefined);
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
@@ -254,6 +269,7 @@ export function SwapScreen() {
 
   return (
     <div className="space-y-6">
+      {costReview && <Panel className="space-y-3 border-violet p-5"><h2 className="font-semibold">Review swap before opening your wallet</h2><p className="break-all text-xs">Recipient: {signer?.address}</p><p className="text-sm">Input: {amount} {assetIn?.kind === "asset" ? `asset #${assetIn.id}` : "tPOT"} · Output: {assetOut?.kind === "asset" ? `asset #${assetOut.id}` : "tPOT"}</p><p className="text-sm">Minimum received: {minimum !== null && assetOut && assetDecimals(assetOut, maps.decimals) !== null ? formatUnits(minimum.toString(), assetDecimals(assetOut, maps.decimals)!) : "Unavailable"}</p><p className="text-sm">Estimated network fee: {formatUnits(costReview.fee, 14)} tPOT · Fee budget with reserve: {formatUnits(costReview.budget, 14)} tPOT</p><p className="text-xs text-muted">Total native requirement: {formatUnits(costReview.total, 14)} tPOT. Pool fees are included in the output quote. This review expires after 30 seconds.</p><div className="flex gap-3"><Button onClick={() => closeReview(true)}>Continue to wallet</Button><Button onClick={() => closeReview(false)}>Cancel review</Button></div></Panel>}
       <PageIntro
         eyebrow="Swap"
         title="Find your flow."

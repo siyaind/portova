@@ -1,5 +1,6 @@
 "use client";
 
+import { LpHoldings } from "@/components/lp-holdings";
 import { HoldingsTable } from "@/components/holdings";
 import { ModuleScreen } from "@/components/module-screen";
 import { Panel } from "@/components/ui";
@@ -14,6 +15,7 @@ export default function PortfolioPage() {
       <Panel>
         <HoldingsTable />
       </Panel>
+      <LpHoldings />
     </ModuleScreen>
   );
 }
