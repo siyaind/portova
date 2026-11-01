@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {effectivePlan} from "./plans.ts";
 import {objectSubjects,changedFacts} from "./indexer-core.ts";
 import {validateProjectRequest} from "./cloud-project.ts";
-import Stripe from 'stripe';
 import {securityHeaders} from './security-headers.ts';
 test("entitlements require a paid active unexpired subscription",()=>{
   assert.equal(effectivePlan('team','active','2099-01-01'),'team');
@@ -25,15 +24,6 @@ test("monitor alerts distinguish changed links, missing data and actual reserve 
   assert.equal(changedFacts({assetId:'1',issuer:'a'},{assetId:'2',issuer:'b'}).length,0);
   assert.equal(changedFacts({poolId:'1',reserve1:'100'},{poolId:'1',reserve1:null}).length,0);
   assert.equal(changedFacts({poolId:'1',reserve1:'100'},{poolId:'1',reserve1:'80'}).length,1);
-});
-test('billing webhook verification rejects modified bodies and expired signatures',()=>{
-  const stripe=new Stripe('sk_test_local_fixture'),secret='whsec_local_fixture';
-  const payload=JSON.stringify({id:'evt_fixture',object:'event',type:'customer.subscription.updated',data:{object:{id:'sub_fixture'}}});
-  const header=stripe.webhooks.generateTestHeaderString({payload,secret});
-  assert.equal(stripe.webhooks.constructEvent(payload,header,secret).id,'evt_fixture');
-  assert.throws(()=>stripe.webhooks.constructEvent(payload+' ',header,secret));
-  const stale=stripe.webhooks.generateTestHeaderString({payload,secret,timestamp:1});
-  assert.throws(()=>stripe.webhooks.constructEvent(payload,stale,secret));
 });
 test('production document CSP uses the supplied nonce without inline script permission',()=>{
   const csp=securityHeaders(false,'unique-request').find(x=>x.key==='Content-Security-Policy')!.value;

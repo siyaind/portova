@@ -1,0 +1,25 @@
+name: Project indexer and monitor
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '2-59/5 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: portova-production-worker
+  cancel-in-progress: false
+jobs:
+  run:
+    if: github.repository == 'siyaind/portova'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Index finalized blocks and monitor projects
+        env:
+          CRON_SECRET: ${{ secrets.PORTOVA_CRON_SECRET }}
+          PORTOVA_ORIGIN: https://portova.vercel.app
+        run: node scripts/scheduled-worker.mjs

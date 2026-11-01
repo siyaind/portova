@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {PGlite} from "@electric-sql/pglite";
 const db=new PGlite();
-before(async()=> {await db.exec(await readFile(new URL('../scripts/cloud-schema.sql',import.meta.url),'utf8'));for(const file of ['002-workspaces.sql','003-indexer.sql'])await db.exec(await readFile(new URL(`../scripts/migrations/${file}`,import.meta.url),'utf8'));});
+before(async()=> {await db.exec(await readFile(new URL('../scripts/cloud-schema.sql',import.meta.url),'utf8'));for(const file of ['002-workspaces.sql','003-indexer.sql','004-crypto-payments.sql','005-crypto-entitlements.sql'])await db.exec(await readFile(new URL(`../scripts/migrations/${file}`,import.meta.url),'utf8'));});
 after(async()=>{await db.close();});
 async function command(owner:string,payload:unknown,id=crypto.randomUUID()) {
   await db.query("INSERT INTO portova_challenges(id,owner,payload,message,expires_at) VALUES($1,$2,$3,'signed by API',now()+interval '5 minutes') ON CONFLICT DO NOTHING",[id,owner,JSON.stringify(payload)]);
@@ -78,4 +78,17 @@ test('concurrent saves of one revision allow only one winner',async()=>{
   const results=await Promise.allSettled([command('carol',save('one',rev)),command('carol',save('one',rev))]);
   assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
   assert.equal(results.filter(r=>r.status==='rejected').length,1);
+});
+
+test('crypto credit is idempotent and paid terms do not overlap',async()=>{
+  const first=crypto.randomUUID(),second=crypto.randomUUID();
+  for(const [id,plan] of [[first,'pro'],[second,'team']])await db.query("INSERT INTO portova_crypto_invoices(id,account,plan,amount,recipient,chain_id,token,expires_at,status,tx_hash,payer) VALUES($1,'crypto-user',$2,$3,'recipient',8453,'token',now()+interval '1 hour','pending',$4,'payer')",[id,plan,plan==='pro'?49000000:149000000,'hash-'+id]);
+  const paid=await db.query<{result:unknown}>("SELECT portova_credit_crypto($1,$2,'payer',now(),123) AS result",[first,'hash-'+first]);
+  const repeat=await db.query<{result:unknown}>("SELECT portova_credit_crypto($1,$2,'payer',now(),123) AS result",[first,'hash-'+first]);assert.deepEqual(paid.rows[0].result,repeat.rows[0].result);
+  await db.query("SELECT portova_credit_crypto($1,$2,'payer',now(),124)",[second,'hash-'+second]);
+  const terms=await db.query<{plan:string;starts_at:Date;ends_at:Date}>("SELECT plan,starts_at,ends_at FROM portova_crypto_terms WHERE account='crypto-user' ORDER BY starts_at");assert.equal(terms.rows.length,2);assert.equal(new Date(terms.rows[0].ends_at).getTime(),new Date(terms.rows[1].starts_at).getTime());
+  const active=await db.query<{plan:string}>("SELECT plan FROM portova_entitlements WHERE account='crypto-user'");assert.equal(active.rows[0].plan,'pro');
+});
+test('a payment transaction cannot be assigned twice',async()=>{
+  const id=crypto.randomUUID();await assert.rejects(db.query("INSERT INTO portova_crypto_invoices(id,account,plan,amount,recipient,chain_id,token,expires_at,tx_hash) SELECT $1,'attacker','pro',49000000,'recipient',8453,'token',now()+interval '1 hour',tx_hash FROM portova_crypto_invoices WHERE account='crypto-user' LIMIT 1",[id]),/unique/);
 });

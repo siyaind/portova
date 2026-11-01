@@ -145,10 +145,13 @@ See [guided launch, technical changes and acceptance boundaries](docs/GUIDED_LAU
 
 ## November 1 operations workspace
 
-Open `/workspace` for cloud project selection, accepted wallet invitations, viewer/editor access, audit history, monitored changes and bounded activity reports. `/pricing` describes Explorer, Pro ($49/month USD) and Team ($149/month USD), with pilot inquiries. Subscription checkout stays disabled until the database, Redis and billing provider are configured. No app transaction fee or Portova token is introduced.
+Open `/workspace` for cloud project selection, accepted wallet invitations, viewer/editor access, audit history, monitored changes and bounded activity reports. `/pricing` describes Explorer, optional Pro (49 USDC/30 days) and Team (149 USDC/30 days), with pilot inquiries. Crypto checkout is disabled during the pilot. It uses native USDC on Base if explicitly enabled. No app transaction fee or Portova token is introduced.
 
 Cloud commands now consume authorization and mutate records atomically, storing results for safe retries. Owned-project quotas and collaborator permissions are enforced server-side. Public reads are rate-limited. Document scripts use request-specific CSP nonces. Runtime 3002 of the verified testnet is the approved compatibility baseline; unreviewed upgrades pause signing.
 
-The finalized-block indexer and project monitor require an operator worker. They do not infer project revenue from object activity. Provider-signed subscription webhooks control paid access; checkout return URLs do not. A billing portal supports provider-managed invoices and cancellation after setup. Pilot/support/abuse/deletion requests are private and operator handled.
+The finalized-block indexer and project monitor require an operator worker. They do not infer project revenue from object activity. Finalized USDC payment proofs control prepaid access. There are no card payments, token approvals or automatic debits; invoices and paid terms are visible in the workspace. Pilot/support/abuse/deletion requests are private and operator handled.
 
 Configuration, migrations, worker deployment, monitoring, backups, restore drills and launch evidence: [production runbook](docs/PRODUCTION_RUNBOOK.md). Customer, pricing and validation assumptions: [business model](docs/BUSINESS_MODEL.md). This is testnet software with production foundations; real-wallet acceptance, live integration/load testing and independent security/legal review remain required before a real-value launch.
+
+
+Worker activation: `.github/workflows/worker.yml` schedules finalized indexing, monitoring and payment reconciliation using repository/Vercel secrets. This is a best-effort schedule; monitor lag and provider quotas. Crypto recipient configuration uses only a public address; no merchant signing key is needed. Checkout remains disabled pending customer-value validation.

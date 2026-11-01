@@ -59,7 +59,7 @@ export async function runIndexer() {
 export async function monitorProjects() {
   const sql=database(),api=await chainApi(),hash=await api.rpc.chain.getFinalizedHead(),at=await api.at(hash),height=(await api.rpc.chain.getHeader(hash)).number.toNumber();
   const [job]=await sql`SELECT cursor FROM portova_jobs WHERE name='monitor'`;
-  const projects=await sql`SELECT p.* FROM portova_projects p JOIN portova_billing b ON b.account=p.owner WHERE b.status='active' AND b.period_end>now() AND b.plan IN ('pro','team') AND p.id>${job?.cursor??""} ORDER BY p.id LIMIT 5`;
+  const projects=await sql`SELECT p.* FROM portova_projects p JOIN portova_entitlements b ON b.account=p.owner WHERE b.status='active' AND b.period_end>now() AND b.plan IN ('pro','team') AND p.id>${job?.cursor??""} ORDER BY p.id LIMIT 5`;
   const started=Date.now();let checked=0;
   for(const row of projects) {
     if(Date.now()-started>35000)break;

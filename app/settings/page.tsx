@@ -61,7 +61,7 @@ export default function SettingsPage() {
         />
         <Setting
           label="Deployment"
-          value="Hosted at portova.vercel.app. No contract, indexer, custom AMM, or mainnet endpoint is configured."
+          value="Hosted at portova.vercel.app. Core chain tools use Portaldot testnet. Optional USDC billing uses Base; indexing and monitoring run through the operator worker."
         />
         <Setting
           label="Trust"
