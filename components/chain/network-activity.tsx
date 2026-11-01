@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Panel, Button } from "@/components/ui";
+import { useChain } from '@/components/chain/chain-provider';
 type Feed = {
   indexer: { start_height: number; height: number; updated_at: string } | null;
   events: Array<{
@@ -13,6 +14,7 @@ type Feed = {
   }>;
 };
 export function NetworkActivity() {
+  const chain = useChain();
   const [feed, setFeed] = useState<Feed | null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(0);
@@ -33,6 +35,8 @@ export function NetworkActivity() {
       });
     return () => abort.abort();
   }, [refresh]);
+  const lag = feed?.indexer && chain.blockNumber ? Math.max(0, Number(chain.blockNumber) - Number(feed.indexer.height)) : null;
+  const stale = !!feed?.indexer && Date.now() - Date.parse(feed.indexer.updated_at) > 15 * 60_000;
   return (
     <Panel className="space-y-4 p-5">
       <div className="flex items-center justify-between gap-3">
@@ -50,6 +54,7 @@ export function NetworkActivity() {
               ? `Indexed finalized blocks ${feed.indexer.start_height}–${feed.indexer.height}. Updated ${new Date(feed.indexer.updated_at).toLocaleString()}.`
               : "No finalized range has been indexed yet."}
           </p>
+          {((lag !== null && lag > 20) || stale) && <p role="status" className="text-sm leading-7 text-warn">{lag !== null && lag > 20 ? `The indexer is catching up, approximately ${lag} blocks behind the network head.` : 'The last indexer update is over 15 minutes old.'} Recent activity only covers the indexed range shown above.</p>}
           {feed.events.length ? (
             <ul className="divide-y divide-line">
               {feed.events.map((e) => (

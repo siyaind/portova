@@ -22,6 +22,7 @@ Production deployment uses Vercel’s existing GitHub integration. `scripts/prod
 - Pilot: explicit signed activation, once per wallet, 30 days, five projects and three collaborators per project. Enables Team capabilities for that bounded trial. Paid entitlements take priority. Expired pilots cannot restart, and expiration removes editing/monitoring eligibility without deleting projects.
 - Public account search: finalized native free/reserved balances for Substrate accounts. It does not claim token/NFT/account-history coverage or EVM/Substrate equivalence.
 - Public network activity: bounded native object-related calls from the indexed finalized range, with coverage and last-updated information. No workspace audit data is exposed.
+- Activity shows a catch-up warning when the indexed height is significantly behind the observed network head, or an update is over 15 minutes old. GitHub schedules are best effort, not a monitoring SLA; before a demo, manually dispatch the Project indexer and monitor workflow and confirm its actual timestamps. Reliable recurring scheduling must be demonstrated before paid monitoring is enabled.
 - `/bridge`: external information and a new-tab link to `bridge.portaldot.dev/en`. No embedded transfer, automatic wallet switch or claim of testnet/user-created-token support.
 - `/tools`: advanced and rehearsal tools. Native NFT trading availability is read from the runtime; the app cannot enable a disabled runtime feature.
 

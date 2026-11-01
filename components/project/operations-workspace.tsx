@@ -41,7 +41,7 @@ export function OperationsWorkspace({
 }) {
   const wallet = useSubstrateWallet(),
     stored = useProject();
-  const [ready, setReady] = useState(false),
+  const [ready, setReady] = useState<boolean | null>(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
   const [projects, setProjects] = useState<CloudProject[]>([]),
@@ -244,9 +244,11 @@ export function OperationsWorkspace({
           </Link>
         </div>
         <p className="text-xs text-muted">
-          {ready
-            ? "Cloud services connected."
-            : "Cloud services are temporarily unavailable."}{" "}
+          {ready === null
+            ? "Checking cloud services…"
+            : ready
+              ? "Cloud services connected."
+              : "Cloud services are temporarily unavailable."}{" "}
           Loaded access tier: {plan}.
         </p>
       </Panel>
