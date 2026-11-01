@@ -8,6 +8,7 @@ import { readPoolPage, type PoolView } from "@/lib/pools";
 import { emptyDiscovery, type DiscoveryState } from "@/lib/discovery-state";
 import { errorText } from "@/lib/format";
 import { SUBSTRATE_WS, TESTNET_GENESIS } from "@/lib/network";
+import {supportedRuntime} from "@/lib/network-policy";
 
 export type ChainStatus = "connecting" | "live" | "unavailable";
 type Kind = "assets" | "collections" | "pools";
@@ -83,12 +84,12 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
     async function ready(api: ApiPromise) {
       const ticket = ++generation;
       try {
-        if (api.genesisHash.toHex() !== TESTNET_GENESIS || api.runtimeVersion.specName.toString() !== "portaldot-v3") throw Error("This node does not match the verified Portaldot V3 testnet. Signing is disabled.");
+        if (!supportedRuntime(api.genesisHash.toHex(),api.runtimeVersion.specName.toString(),api.runtimeVersion.specVersion.toString())) throw Error("This network or runtime version has not been approved for Portova. Signing is paused pending compatibility review.");
         const [name, header] = await Promise.all([api.rpc.system.chain(), api.rpc.chain.getHeader()]);
         if (cancelled || ticket !== generation) return;
         setChainName(name.toString()); setBlockNumber(header.number.toString());
         unsubscribe?.();
-        unsubscribe = await api.rpc.chain.subscribeNewHeads(head => { if (!cancelled) { lastHead = Date.now(); setBlockNumber(head.number.toString()); if (navigator.onLine) { setStatus("live"); setError(null); } } });
+        unsubscribe = await api.rpc.chain.subscribeNewHeads(head => { if (!cancelled) { lastHead = Date.now(); setBlockNumber(head.number.toString()); if (!supportedRuntime(api.genesisHash.toHex(),api.runtimeVersion.specName.toString(),api.runtimeVersion.specVersion.toString())) {setStatus("unavailable");setError("Runtime compatibility review is required before signing.");} else if (navigator.onLine) { setStatus("live"); setError(null); } } });
         if (cancelled || ticket !== generation) { unsubscribe?.(); return; }
         // Discovery failures do not disable independent account reads or signing.
         if (navigator.onLine) { setStatus("live"); setError(null); } else offline();

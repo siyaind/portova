@@ -1,7 +1,7 @@
-export function securityHeaders(development = false) {
+export function securityHeaders(development = false, nonce?:string) {
   const policy = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${development ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' ${nonce ? `'nonce-${nonce}' 'strict-dynamic'` : "'unsafe-inline'"} 'wasm-unsafe-eval'${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'", "font-src 'self'", "img-src 'self' data: blob:",
     `connect-src 'self' wss://test-node-v3.portaldot.dev https://test-evm-rpc-v3.portaldot.dev${development ? " ws: wss:" : ""}`,
     "worker-src 'self' blob:", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",

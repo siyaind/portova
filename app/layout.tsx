@@ -15,6 +15,8 @@ const mono = IBM_Plex_Mono({
   variable: "--font-ibm",
 });
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Portova — Create. Launch. Trade. Own.",
   description: "A home for your next onchain idea. Create native tokens, launch NFT collections, and bring your assets together on Portaldot V3 Testnet.",

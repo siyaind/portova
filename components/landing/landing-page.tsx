@@ -27,7 +27,7 @@ export function LandingPage() {
     <div className="landing-backdrop" aria-hidden="true" />
     <header className="landing-header"><div className="landing-container landing-header-inner">
       <Brand />
-      <nav className="landing-desktop-nav" aria-label="Main navigation"><a href="#workspace">The workspace</a><a href="#how-it-works">How it works</a><Link href="/explore">Explore <ArrowUpRight size={13} /></Link></nav>
+      <nav className="landing-desktop-nav" aria-label="Main navigation"><a href="#workspace">The workspace</a><a href="#how-it-works">How it works</a><Link href="/explore">Explore <ArrowUpRight size={13} /></Link><Link href="/pricing">Plans & pilot</Link></nav>
       <div className="landing-header-actions"><span className="testnet-label"><span /> V3 Testnet</span><Link href="/overview" className="landing-button button-small">Open app <ArrowUpRight size={16} /></Link><button className="landing-menu-button" aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen} aria-controls="landing-mobile-nav" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={22} /> : <Menu size={22} />}</button></div>
     </div>{menuOpen && <nav id="landing-mobile-nav" className="landing-mobile-nav" aria-label="Mobile navigation"><a href="#workspace" onClick={() => setMenuOpen(false)}>The workspace <ArrowRight size={16} /></a><a href="#how-it-works" onClick={() => setMenuOpen(false)}>How it works <ArrowRight size={16} /></a><Link href="/explore" onClick={() => setMenuOpen(false)}>Explore assets <ArrowUpRight size={16} /></Link></nav>}</header>
 
@@ -35,7 +35,7 @@ export function LandingPage() {
       <section className="landing-container hero-section"><div className="hero-copy">
         <div className="hero-eyebrow rise"><span className="eyebrow-line" /> A NEW HOME FOR WHAT YOU CREATE</div>
         <h1 className="hero-title rise">Big ideas.<br />Real ownership.<br /><span>Endless possibility.</span></h1>
-        <p className="hero-description rise">Create a token. Launch a collection. Bring it all together.<br className="desktop-break" /> Your onchain journey starts with Portova.</p>
+        <p className="hero-description rise">Launch your project. Monitor what changes. Bring your team together.<br className="desktop-break" /> Your onchain journey starts with Portova.</p>
         <div className="hero-actions rise"><Link href="/launch" className="landing-button">Start a guided launch <ArrowUpRight size={19} /></Link><a href="#workspace" className="hero-secondary">Discover what&apos;s possible <ArrowDown size={16} /></a></div>
         <div className="hero-assurance rise"><ShieldCheck size={15} /><span>Your wallet. Your assets. Always.</span><span className="assurance-divider" /><span>Built on Portaldot</span></div>
       </div><NetworkSculpture /><div className="hero-bottom-note"><span>CREATE. LAUNCH. TRADE. OWN.</span><a href="#workspace" aria-label="Scroll to the workspace"><ArrowDown size={16} /></a><span>ONE CONNECTED WORKSPACE</span></div></section>

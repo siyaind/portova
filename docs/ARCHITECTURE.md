@@ -1,5 +1,7 @@
 # Architecture
 
+November 1 update: the optional operations backend adds Postgres workspaces/audit/entitlements, Redis rate limits/discovery, finalized object-event indexing, sampled project monitoring and provider-verified billing. The approved runtime is testnet 3002; unreviewed upgrades pause signing. Services require explicit activation and testing. These additions supersede older statements below about a browser-only backend or no indexer. See [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) and [BUSINESS_MODEL.md](BUSINESS_MODEL.md).
+
 Updated October 25, 2026. PORTOVA is a browser-based Next.js application on Vercel, using Portaldot V3 testnet runtime pallets.
 
 The October 25 update adds a shared wallet-operation guard to every signing screen, a common durable two-step NFT launch state machine, paginated storage discovery, prospective fee measurements and a pinned Creator Launch Health view in Studio. See REVIEW_FOLLOWUP.md for the validation scope and remaining owner wallet tests.

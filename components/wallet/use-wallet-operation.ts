@@ -6,6 +6,7 @@ import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import type { signAndSend as submit } from "@/lib/assets";
 import { guardedSignAndSend, operationDraft, walletOperation, type WalletOperationContext } from "@/lib/wallet-operation";
 import { sameAccount } from "@/lib/withdrawal";
+import {supportedRuntime} from "@/lib/network-policy";
 
 export function useWalletOperation(draft: unknown) {
   const chain = useChain(), wallet = useSubstrateWallet(), api = chain.getApi();
@@ -15,7 +16,7 @@ export function useWalletOperation(draft: unknown) {
     account: wallet.selected?.address ?? null, source: wallet.selected?.source ?? null,
     genesisHash: api?.genesisHash.toHex() ?? null,
     runtime: api ? `${api.runtimeVersion.specName}:${api.runtimeVersion.specVersion}` : null,
-    live: chain.status === "live", draft: operationDraft(draft),
+    live: chain.status === "live" && !!api && supportedRuntime(api.genesisHash.toHex(),api.runtimeVersion.specName.toString(),api.runtimeVersion.specVersion.toString()), draft: operationDraft(draft),
   };
   const key = operationDraft(context);
   if (last.current.key !== key || last.current.api !== api) last.current = { key, api, revision: last.current.revision + 1 };
@@ -26,7 +27,7 @@ export function useWalletOperation(draft: unknown) {
   const walletVersion = wallet.getVersion();
   const guard = walletOperation(current.current, () => {
     const connectedApi = chain.getApi();
-    return { ...current.current, live: alive.current && current.current.live && connectedApi === expectedApi && connectedApi?.isConnected === true && navigator.onLine,
+    return { ...current.current, live: alive.current && current.current.live && connectedApi === expectedApi && connectedApi?.isConnected === true && navigator.onLine && supportedRuntime(connectedApi.genesisHash.toHex(),connectedApi.runtimeVersion.specName.toString(),connectedApi.runtimeVersion.specVersion.toString()),
       genesisHash: connectedApi?.genesisHash.toHex() ?? null,
       runtime: connectedApi ? `${connectedApi.runtimeVersion.specName}:${connectedApi.runtimeVersion.specVersion}` : null,
       revision: wallet.getVersion() === walletVersion ? last.current.revision : -1 };

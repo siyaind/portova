@@ -1,5 +1,7 @@
 # Network compatibility
 
+November 1 update: the optional operations backend adds Postgres workspaces/audit/entitlements, Redis rate limits/discovery, finalized object-event indexing, sampled project monitoring and provider-verified billing. The approved runtime is testnet 3002; unreviewed upgrades pause signing. Services require explicit activation and testing. These additions supersede older statements below about a browser-only backend or no indexer. See [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) and [BUSINESS_MODEL.md](BUSINESS_MODEL.md).
+
 Verified October 24, 2026. The official [V3 rollout announcement](https://x.com/PortaldotL0/status/2113571842917269526) scheduled rollout for October 23 at 23:00 UTC (October 24, 04:30 IST). The [official developer endpoint post](https://x.com/Portaldot_Dev/status/2113571130527318088) publishes separate mainnet and testnet services.
 
 ## Portova configuration

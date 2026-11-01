@@ -10,13 +10,13 @@ Connect Neon Postgres and Upstash Redis to the existing Vercel Portova project. 
 - Redis REST: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (or the integration's `KV_REST_API_URL` and `KV_REST_API_TOKEN`).
 - `PORTOVA_ORIGIN` is optional for production's `https://portova.vercel.app`; set an exact origin for another deployment hostname. Wildcards are not accepted.
 
-Apply `scripts/cloud-schema.sql` once using the database SQL console or a secure local migration runner. It only creates Portova tables/indexes if absent. Redeploy after connecting integrations. GET `/api/projects/status` reports whether credentials are configured, not whether the database schema and services are healthy.
+Run `npm run db:migrate` to apply the base schema and versioned workspace/indexer migrations. Do not apply only the old base schema. Redeploy after connecting integrations. GET `/api/projects/status` now checks database/schema and Redis availability.
 
 ## Data and permissions
 
 Local drafts remain local until Save to cloud. The cloud record contains the project name, linked token/collection/pool IDs, reference account, launch plan, description, publisher and revision. Receipts and NFT recovery checkpoints are not backed up by this feature; export receipts separately.
 
-Each save or private list requires a fresh Substrate message signature. The server creates a five-minute, single-use challenge binding origin, account, action, exact normalized payload hash and nonce. It verifies the signature and consumes the challenge atomically. Updates also require matching owner and cloud revision; concurrent writes return 409. Loading the project is required before updating a previously saved cloud record. No wallet key, seed, or persistent login token is stored.
+Each save or private list requires a fresh Substrate message signature. The server creates a five-minute, single-use challenge binding origin, account, action, exact normalized payload hash and nonce. It verifies the signature and consumes the challenge atomically. Updates also require matching owner and cloud revision; concurrent writes return 409. Loading the project is required before updating a previously saved cloud record. November 1: challenge consumption and mutation are atomic; replaying the same verified request returns its stored result for up to 24 hours. No wallet key, seed, or persistent login token is stored.
 
 Publishing is explicit. `/projects/[id]` serves only published records. Unpublishing requires a signed save and prevents future reads from that endpoint; previously downloaded copies cannot be recalled. The publisher's claim to linked objects is distinct from chain ownership, shown by Launch Health. The public page does not expose browser-local receipts. Public links are not an indexed marketplace or endorsement.
 
@@ -34,3 +34,6 @@ Redis stores short-lived finalized discovery pages and rate-limit counters, not 
 ## Manual transaction regression checks
 
 The owner performs wallet signing. Retest LP10 initial deposit (including the reserved LP-account deposit), a subsequent deposit, removal and a swap. Review estimated fees, reserves, IDs and minimum received. Retest non-issuer token/NFT mint, duplicate NFT item ID, small initial liquidity, rejection, account switch/disconnect during approval, and pending-to-finalized receipt recovery. Start a new NFT launch after completing the previous one. Test two-tab project conflicts and blocked localStorage. These fixes and unit tests are not a security audit or proof of successful live wallet execution.
+
+
+November 1: accepted collaborators, plan quotas, billing, audit, indexer and monitor setup are described in [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md). Public reads now require Redis rate limiting and fail closed when it is unavailable.

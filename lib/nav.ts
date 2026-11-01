@@ -22,6 +22,8 @@ export type NavItem = {
 };
 
 export const NAV_ITEMS: NavItem[] = [
+  { href: "/workspace", label: "Project operations", icon: LayoutDashboard },
+  { href: "/pricing", label: "Plans & pilot", icon: Coins },
   { href: "/launch", label: "Guided launch", icon: ListChecks },
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/explore", label: "Explore", icon: Compass },

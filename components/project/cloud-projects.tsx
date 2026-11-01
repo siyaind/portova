@@ -1,17 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { stringToHex } from "@polkadot/util";
+import { signedProjectRequest } from "@/lib/project-client";
 import { useProject } from "@/components/project/project-provider";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { Button, Panel } from "@/components/ui";
-import { canonicalAccount, projectSignMessage, validateProjectRequest, type CloudProject, type ProjectRequest } from "@/lib/cloud-project";
+import { type CloudProject, type ProjectRequest } from "@/lib/cloud-project";
 import { sameAccount } from "@/lib/withdrawal";
 
-async function requestJson(path: string, body: unknown) {
-  const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
-  const data = await response.json(); if (!response.ok) throw Error(data.error ?? "Project storage is unavailable."); return data;
-}
 export function CloudProjects() {
   const stored = useProject(), wallet = useSubstrateWallet();
   const [available, setAvailable] = useState<boolean | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState<string | null>(null);
@@ -29,19 +25,9 @@ export function CloudProjects() {
     if (!wallet.selected) { await wallet.connect(); return; }
     if (lock.current) return; lock.current = true; setBusy(true); setMessage(null);
     const origin = { ...current.current }, signer = wallet.selected, walletVersion = wallet.getVersion();
-    const valid = () => current.current.alive && wallet.getVersion() === walletVersion && sameAccount(current.current.wallet?.address, signer.address) && current.current.wallet?.source === signer.source && (payload.action === "list" || (current.current.draft === origin.draft && current.current.description === origin.description && current.current.published === origin.published));
+    const valid = () => current.current.alive && wallet.getVersion() === walletVersion && sameAccount(current.current.wallet?.address, signer.address) && current.current.wallet?.source === signer.source && (payload.action !== "save" || (current.current.draft === origin.draft && current.current.description === origin.description && current.current.published === origin.published));
     try {
-      const normalized = validateProjectRequest(payload);
-      const challenge = await requestJson("/api/projects/challenge", { account: signer.address, payload: normalized });
-      const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(normalized)))), b => b.toString(16).padStart(2, "0")).join("");
-      const expected = projectSignMessage(window.location.origin, canonicalAccount(signer.address), challenge.id, challenge.expires, digest, payload.action);
-      if (challenge.message !== expected || !valid()) throw Error("The wallet or project changed. Review again before signing.");
-      const { web3FromSource } = await import("@polkadot/extension-dapp");
-      const extension = await web3FromSource(signer.source);
-      if (!extension.signer?.signRaw) throw Error("This wallet cannot sign project-storage messages.");
-      const signature = await extension.signer.signRaw({ address: signer.address, data: stringToHex(expected), type: "bytes" });
-      if (!valid()) throw Error("The wallet or project changed. The signed storage request was discarded.");
-      const result = await requestJson("/api/projects/commit", { id: challenge.id, signature: signature.signature });
+      const result = await signedProjectRequest(payload, signer, valid);
       if (!valid()) return;
       if (payload.action === "list") { setRows(result.projects); setMessage(`Loaded ${result.projects.length} cloud projects. Choose one below.`); }
       else { setLoadedRevisions(old => ({ ...old, [result.project.id]: result.project.revision })); setRows(old => [result.project, ...old.filter(row => row.id !== result.project.id)]); setMessage(result.project.published ? "Saved. Your public project link is ready below." : "Saved privately. Only this wallet can load it."); }

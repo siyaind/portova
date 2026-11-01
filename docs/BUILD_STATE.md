@@ -1,6 +1,8 @@
 # Build state
 
-Updated October 28, 2026. This document describes the current implementation; earlier phase snapshots remain in Git history.
+Updated November 1, 2026. This document describes the current implementation; earlier phase snapshots remain in Git history.
+
+November 1 follow-up: operations workspace, subscription/pilot model, accepted team access, audit history, atomic idempotent cloud commands, bounded finalized indexing and monitoring, health endpoints, migrations/backup tooling, nonce CSP and a reviewed-runtime gate. Services remain activation-gated. Isolated tests cover PostgreSQL mutations/permissions and webhook-signature policy; deployed provider and wallet acceptance remain outstanding. See [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) and [BUSINESS_MODEL.md](BUSINESS_MODEL.md).
 
 October 28 follow-up: wallet-context cancellation, terminal receipt cleanup, NFT permission checks/retry, LP-account preparation and initial-deposit checks, cost reviews, stale-tab conflict protection, storage-safe startup, LP portfolio positions, and optional signed cloud projects with Redis discovery caching. Infrastructure and real-wallet acceptance are separate from code completion. See [CLOUD_PROJECTS.md](CLOUD_PROJECTS.md).
 

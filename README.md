@@ -58,7 +58,7 @@ flowchart LR
   substrate --> pools[AssetConversion]
 ```
 
-The browser reads Substrate storage for tokens, collections, pools, and the native balance. The EVM client is present for the Revive endpoint and does not replace those pallet reads. Project names and receipts stay in this browser. Receipts save inclusion hints and search checkpoints, recover in the background after reload, and support JSON export/import. Imported success claims require chain verification. Ownership, supply, reserves, and fees stay on the chain.
+The browser reads Substrate storage for tokens, collections, pools, and the native balance. The EVM client is present for the Revive endpoint and does not replace those pallet reads. Local drafts and receipts stay in this browser; project records can be explicitly saved to the authenticated cloud workspace. Receipts save inclusion hints and search checkpoints, recover in the background after reload, and support JSON export/import. Imported success claims require chain verification. Ownership, supply, reserves, and fees stay on the chain.
 
 ## Run it locally
 
@@ -118,7 +118,7 @@ These calls were recorded from earlier app runs on V3 testnet. They are examples
 - A deployed ink! or Solidity contract. Token, collection, and pool state live in the pallets above.
 - List, cancel, and buy. The testnet Trading feature is off.
 - Vesting of a created token, royalties, auctions, a bridge, and mainnet.
-- A Portova indexer. Activity stores browser receipts and can recover older hashes through the public RPC. It does not claim to be full account history.
+- A full account or revenue indexer. The optional worker indexes related native object calls from an explicit finalized starting block. Browser Activity retains separate receipts and RPC recovery.
 
 ## October 24 update and demo
 
@@ -141,3 +141,14 @@ See the [review response and owner test checklist](docs/REVIEW_FOLLOWUP.md), [pa
 Start at `/launch` to save a token or NFT plan, resume form drafts, review wallet funding and costs, attach finalized objects to the same project, optionally set up liquidity, and inspect Launch Health. Existing transaction safeguards and explicit signatures are preserved. Portfolio/linked-account reads now show snapshot freshness and incomplete results; discovery runs in independent pages; cross-tab locks coordinate NFT launches, receipt merging and versioned project writes. Wallet-dialog accessibility and browser security headers are included.
 
 See [guided launch, technical changes and acceptance boundaries](docs/GUIDED_LAUNCH.md). The automated suite now has 84 tests. Wallet acceptance testing remains owner-run.
+
+
+## November 1 operations workspace
+
+Open `/workspace` for cloud project selection, accepted wallet invitations, viewer/editor access, audit history, monitored changes and bounded activity reports. `/pricing` describes Explorer, Pro ($49/month USD) and Team ($149/month USD), with pilot inquiries. Subscription checkout stays disabled until the database, Redis and billing provider are configured. No app transaction fee or Portova token is introduced.
+
+Cloud commands now consume authorization and mutate records atomically, storing results for safe retries. Owned-project quotas and collaborator permissions are enforced server-side. Public reads are rate-limited. Document scripts use request-specific CSP nonces. Runtime 3002 of the verified testnet is the approved compatibility baseline; unreviewed upgrades pause signing.
+
+The finalized-block indexer and project monitor require an operator worker. They do not infer project revenue from object activity. Provider-signed subscription webhooks control paid access; checkout return URLs do not. A billing portal supports provider-managed invoices and cancellation after setup. Pilot/support/abuse/deletion requests are private and operator handled.
+
+Configuration, migrations, worker deployment, monitoring, backups, restore drills and launch evidence: [production runbook](docs/PRODUCTION_RUNBOOK.md). Customer, pricing and validation assumptions: [business model](docs/BUSINESS_MODEL.md). This is testnet software with production foundations; real-wallet acceptance, live integration/load testing and independent security/legal review remain required before a real-value launch.

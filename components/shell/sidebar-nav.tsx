@@ -12,8 +12,8 @@ export function SidebarNav() {
       {[
         { label: "Discover", hrefs: ["/overview", "/explore"] },
         { label: "Create & trade", hrefs: ["/launch", "/token-launchpad", "/nft-launchpad", "/swap", "/liquidity", "/market"] },
-        { label: "Your workspace", hrefs: ["/studio", "/portfolio", "/treasury"] },
-        { label: "Resources", hrefs: ["/run", "/activity", "/settings"] },
+        { label: "Your workspace", hrefs: ["/workspace", "/studio", "/portfolio", "/treasury"] },
+        { label: "Resources", hrefs: ["/pricing", "/run", "/activity", "/settings"] },
       ].map((group) => <div key={group.label} className="nav-group"><p>{group.label}</p>{group.hrefs.map((href) => NAV_ITEMS.find((item) => item.href === href)!).map((item) => {
         const active = isActive(pathname, item.href);
         const Icon = item.icon;

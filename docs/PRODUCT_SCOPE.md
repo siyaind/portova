@@ -1,5 +1,7 @@
 # Product scope
 
+November 1 update: the optional operations backend adds Postgres workspaces/audit/entitlements, Redis rate limits/discovery, finalized object-event indexing, sampled project monitoring and provider-verified billing. The approved runtime is testnet 3002; unreviewed upgrades pause signing. Services require explicit activation and testing. These additions supersede older statements below about a browser-only backend or no indexer. See [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) and [BUSINESS_MODEL.md](BUSINESS_MODEL.md).
+
 Updated October 24, 2026.
 
 October 25 addition: Creator Studio includes Creator Launch Health with finalized ownership, supply, paginated holders, LP reserves/share, a fee-excluding swap scenario and confirmed browser receipts for the reference account. Treasury is explicitly a linked-account balance/withdrawal tool. It does not attribute sales to projects or route revenue. All signing routes use a shared context guard, both NFT routes share launch recovery, and storage discovery is paginated. Details: REVIEW_FOLLOWUP.md.

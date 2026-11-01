@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { securityHeaders } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
-  async headers() { return [{ source: "/(.*)", headers: securityHeaders(process.env.NODE_ENV === "development") }]; },
+  async headers() { return [{ source: "/(.*)", headers: securityHeaders(process.env.NODE_ENV === "development").filter(h=>h.key!=="Content-Security-Policy") }]; },
   serverExternalPackages: [
     "@polkadot/api",
     "@polkadot/extension-dapp",

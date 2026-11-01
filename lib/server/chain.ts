@@ -1,6 +1,7 @@
 import "server-only";
 import { ApiPromise, WsProvider } from "@polkadot/api";
 import { SUBSTRATE_WS, TESTNET_GENESIS } from "@/lib/network";
+import {supportedRuntime} from "@/lib/network-policy";
 let pending: Promise<ApiPromise> | undefined;
 export async function chainApi() {
   if (!pending) {
@@ -15,5 +16,7 @@ export async function chainApi() {
       finally { clearTimeout(timer); }
     })();
   }
-  return pending;
+  const api=await pending;
+  if(!api.isConnected || !supportedRuntime(api.genesisHash.toHex(),api.runtimeVersion.specName.toString(),api.runtimeVersion.specVersion.toString())) throw Error("The connection or runtime requires review.");
+  return api;
 }

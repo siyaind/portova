@@ -1,4 +1,11 @@
 import "server-only";
+import { createHash } from "node:crypto";
+export async function clientLimit(request: Request, action: string, limit: number) {
+  // Vercel supplies this header; do not trust arbitrary X-Forwarded-For chains.
+  const ip = request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ?? "unidentified";
+  const key = createHash("sha256").update(`${process.env.RATE_LIMIT_SALT ?? "portova"}:${ip}`).digest("hex").slice(0,32);
+  await rateLimit(`client:${action}:${key}`, limit);
+}
 
 export function redisConfigured() {
   return !!((process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL) && (process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN));

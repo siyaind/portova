@@ -36,3 +36,14 @@ Automated wallet tests use fake adapters and execute the actual submission helpe
 ## October 28 cloud boundary
 
 Optional project storage now adds server routes, Postgres and Redis. Each private read/write uses a single-use wallet message challenge; cloud updates compare owner and revision. Public access is opt-in and revoked by an authenticated unpublished save. Server secrets never use NEXT_PUBLIC variables. Shared caching applies only to finalized discovery; signing reads remain direct. See [CLOUD_PROJECTS.md](CLOUD_PROJECTS.md) for provisioning, limitations and acceptance checks.
+
+
+## November 1 production foundations
+
+Cloud commands execute under one PostgreSQL transaction with retained idempotent results. Signatures are verified on every delivery, including retries. Accepted invitations, viewer/editor permissions, owner-only publishing/access changes and a two-party workspace transfer are enforced in the database. A canceled Team plan makes existing editors read-only. This does not grant chain authority. Project creation quotas are checked under an account advisory lock.
+
+Public reads and signing endpoints have client/account/global rate controls; client identifiers use the hosting provider's trusted forwarded header and a salted digest. Public data is not cached beyond revocation. Billing uses hosted checkout, raw-body webhook verification, approved price IDs and persisted subscription entitlements. Checkout requests have account-level leases and provider idempotency keys. Live billing requires an explicit operator flag and separate external review.
+
+Document rendering is dynamic with per-request CSP nonces; production inline-script permission is removed. The reviewed runtime baseline is Portaldot V3 testnet spec 3002, observed November 1. Unreviewed versions pause signing and worker ingestion. Operator health and worker routes require a private bearer secret; workers never sign or broadcast transactions.
+
+Isolated PostgreSQL tests cover permissions, quota enforcement, authorization rollback, replay results, revision conflicts and indexer/monitor checkpoint consistency. They do not substitute for a human wallet matrix, deployed-provider tests, an independent audit, load tests or restore drills. See PRODUCTION_RUNBOOK.md.
