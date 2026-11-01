@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/*.test.ts",
+    "test": "node --experimental-strip-types --test lib/*.test.ts scripts/*.test.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "ops:worker": "node scripts/worker.mjs",
     "db:backup": "node scripts/backup.mjs"

@@ -1,0 +1,4 @@
+{
+  "buildCommand": "node scripts/production-build.mjs",
+  "regions": ["iad1"]
+}

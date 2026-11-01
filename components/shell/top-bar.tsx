@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { Bell, Menu, Search, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useChain } from "@/components/chain/chain-provider";
-import { isExtrinsicHash, txStatusLabel, useTxs } from "@/components/tx/tx-tracker";
+import {
+  isExtrinsicHash,
+  txStatusLabel,
+  useTxs,
+} from "@/components/tx/tx-tracker";
 import { WalletDialog } from "@/components/wallet/wallet-dialog";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { CHAIN_ID } from "@/lib/network";
@@ -19,7 +23,10 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
   const evm = useConnection();
   const txs = useTxs();
   const pending = txs.items.filter(
-    (item) => item.status === "signing" || item.status === "submitted" || item.status === "included",
+    (item) =>
+      item.status === "signing" ||
+      item.status === "submitted" ||
+      item.status === "included",
   ).length;
   const [walletOpen, setWalletOpen] = useState(false);
   const [txOpen, setTxOpen] = useState(false);
@@ -41,7 +48,11 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
   }, []);
 
   const dot =
-    chain.status === "live" ? "bg-ok" : chain.status === "connecting" ? "bg-warn" : "bg-bad";
+    chain.status === "live"
+      ? "bg-ok"
+      : chain.status === "connecting"
+        ? "bg-warn"
+        : "bg-bad";
 
   const walletLabel = substrate.selected
     ? shortAddress(substrate.selected.address, 4, 4)
@@ -51,122 +62,175 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
 
   return (
     <>
-    <header className="app-topbar sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-white/6 px-4 backdrop-blur-xl sm:gap-4 sm:px-7 lg:px-9">
-      <button
-        type="button"
-        className="rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink lg:hidden"
-        aria-label="Open navigation"
-        onClick={onOpenNav}
-      >
-        <Menu size={18} />
-      </button>
-      <span className="topbar-workspace-label hidden xl:block">Workspace <span>/</span></span>
-      <SearchBox />
-      <div
-        className="hidden items-center gap-2 rounded-full border border-line bg-panel/60 px-3 py-2 text-[10px] sm:flex"
-        title="This build only talks to Portaldot V3 testnet."
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
-        <span>V3 Testnet</span>
-        <span className="hidden font-mono text-faint 2xl:inline">{CHAIN_ID}</span>
-        {chain.blockNumber ? (
-          <span className="font-mono text-muted">#{chain.blockNumber}</span>
-        ) : null}
-      </div>
-      <div className="relative" ref={txRef}>
+      <header className="app-topbar sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-white/6 px-4 backdrop-blur-xl sm:gap-4 sm:px-7 lg:px-9">
         <button
           type="button"
-          aria-expanded={txOpen}
-          aria-haspopup="dialog"
-          className="relative rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink"
-          onClick={() => setTxOpen((open) => !open)}
+          className="rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink lg:hidden"
+          aria-label="Open navigation"
+          onClick={onOpenNav}
         >
-          <Bell size={18} />
-          {pending > 0 ? (
-            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-violet" />
+          <Menu size={18} />
+        </button>
+        <span className="topbar-workspace-label hidden xl:block">
+          Workspace <span>/</span>
+        </span>
+        <SearchBox />
+        <div
+          className="hidden items-center gap-2 rounded-full border border-line bg-panel/60 px-3 py-2 text-[10px] sm:flex"
+          title="This build only talks to Portaldot V3 testnet."
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
+          <span>V3 Testnet</span>
+          <span className="hidden font-mono text-faint 2xl:inline">
+            {CHAIN_ID}
+          </span>
+          {chain.blockNumber ? (
+            <span className="font-mono text-muted">#{chain.blockNumber}</span>
           ) : null}
-          <span className="sr-only">
-            {pending > 0
-              ? `${pending} transaction${pending === 1 ? "" : "s"} in progress`
-              : "Transaction notifications"}
+        </div>
+        <div className="relative" ref={txRef}>
+          <button
+            type="button"
+            aria-expanded={txOpen}
+            aria-haspopup="dialog"
+            className="relative rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink"
+            onClick={() => setTxOpen((open) => !open)}
+          >
+            <Bell size={18} />
+            {pending > 0 ? (
+              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-violet" />
+            ) : null}
+            <span className="sr-only">
+              {pending > 0
+                ? `${pending} transaction${pending === 1 ? "" : "s"} in progress`
+                : "Transaction notifications"}
+            </span>
+          </button>
+          {txOpen ? (
+            <div
+              role="dialog"
+              aria-label="Transactions"
+              className="transaction-popover absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-4 shadow-2xl shadow-black/40"
+            >
+              <p className="text-sm font-medium">Transactions</p>
+              {txs.items.length === 0 ? (
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  No transactions yet. A hash appears here only after the node
+                  returns one.
+                </p>
+              ) : (
+                <ul className="mt-3 max-h-80 space-y-3 overflow-y-auto">
+                  {txs.items.slice(0, 20).map((item) => (
+                    <li
+                      key={item.id}
+                      className="border-t border-line pt-3 first:border-0 first:pt-0"
+                    >
+                      <p className="text-sm">{item.label}</p>
+                      <p className="mt-1 text-xs tracking-wide text-faint uppercase">
+                        {txStatusLabel(item.status)}
+                      </p>
+                      {isExtrinsicHash(item.hash) ? (
+                        <p className="mt-1 font-mono text-xs break-all text-muted">
+                          {item.hash}
+                        </p>
+                      ) : null}
+                      {item.error ? (
+                        <p className="mt-1 text-xs leading-5 text-warn">
+                          {item.error}
+                        </p>
+                      ) : null}
+                      {item.hash && receiptExplorerUrl(item.hash) ? (
+                        <a
+                          href={receiptExplorerUrl(item.hash)!}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block text-xs text-violet"
+                        >
+                          Open in testnet explorer ↗
+                        </a>
+                      ) : null}
+                      {item.collectionId ? (
+                        <Link
+                          href={`/collection/${item.collectionId}`}
+                          className="mt-1 inline-block text-xs text-blue hover:underline"
+                        >
+                          Open collection
+                        </Link>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link
+                href="/activity"
+                onClick={() => setTxOpen(false)}
+                className="mt-3 inline-block text-xs text-violet"
+              >
+                All receipts & recovery
+              </Link>
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="wallet-connect-button inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold sm:px-4"
+          aria-label={
+            walletLabel === "Connect"
+              ? "Connect wallet"
+              : `Manage wallet ${walletLabel}`
+          }
+          onClick={() => setWalletOpen(true)}
+        >
+          <Wallet size={14} />
+          <span>
+            {walletLabel === "Connect" ? "Connect wallet" : walletLabel}
           </span>
         </button>
-        {txOpen ? (
-          <div
-            role="dialog"
-            aria-label="Transactions"
-            className="transaction-popover absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-4 shadow-2xl shadow-black/40"
-          >
-            <p className="text-sm font-medium">Transactions</p>
-            {txs.items.length === 0 ? (
-              <p className="mt-2 text-sm leading-6 text-muted">
-                No transactions yet. A hash appears here only after the node
-                returns one.
-              </p>
-            ) : (
-              <ul className="mt-3 max-h-80 space-y-3 overflow-y-auto">
-                {txs.items.slice(0, 20).map((item) => (
-                  <li key={item.id} className="border-t border-line pt-3 first:border-0 first:pt-0">
-                    <p className="text-sm">{item.label}</p>
-                    <p className="mt-1 text-xs tracking-wide text-faint uppercase">
-                      {txStatusLabel(item.status)}
-                    </p>
-                    {isExtrinsicHash(item.hash) ? (
-                      <p className="mt-1 font-mono text-xs break-all text-muted">{item.hash}</p>
-                    ) : null}
-                    {item.error ? (
-                      <p className="mt-1 text-xs leading-5 text-warn">{item.error}</p>
-                    ) : null}
-                    {item.hash && receiptExplorerUrl(item.hash) ? <a href={receiptExplorerUrl(item.hash)!} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-violet">Open in testnet explorer ↗</a> : null}
-                    {item.collectionId ? (
-                      <Link
-                        href={`/collection/${item.collectionId}`}
-                        className="mt-1 inline-block text-xs text-blue hover:underline"
-                      >
-                        Open collection
-                      </Link>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Link href="/activity" onClick={() => setTxOpen(false)} className="mt-3 inline-block text-xs text-violet">All receipts & recovery</Link>
-          </div>
-        ) : null}
-      </div>
-      <button
-        type="button"
-        className="wallet-connect-button inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold sm:px-4"
-        aria-label={walletLabel === "Connect" ? "Connect wallet" : `Manage wallet ${walletLabel}`}
-        onClick={() => setWalletOpen(true)}
-      >
-        <Wallet size={14} /><span>{walletLabel === "Connect" ? "Connect wallet" : walletLabel}</span>
-      </button>
-      <WalletDialog open={walletOpen} onClose={() => setWalletOpen(false)} />
-    </header>
-    {substrate.error && !walletOpen ? (
-      <p className="border-b border-line bg-bg px-4 py-2 text-sm leading-6 text-warn">{substrate.error}</p>
-    ) : null}
-    {txs.storageError ? <p role="alert" className="border-b border-line bg-bg px-4 py-2 text-xs leading-6 text-warn">{txs.storageError} <Link href="/activity" className="underline">Export receipts</Link></p> : null}
+        <WalletDialog open={walletOpen} onClose={() => setWalletOpen(false)} />
+      </header>
+      {substrate.error && !walletOpen ? (
+        <p className="border-b border-line bg-bg px-4 py-2 text-sm leading-6 text-warn">
+          {substrate.error}
+        </p>
+      ) : null}
+      {txs.storageError ? (
+        <p
+          role="alert"
+          className="border-b border-line bg-bg px-4 py-2 text-xs leading-6 text-warn"
+        >
+          {txs.storageError}{" "}
+          <Link href="/activity" className="underline">
+            Export receipts
+          </Link>
+        </p>
+      ) : null}
     </>
   );
 }
 
 function searchResult(
   raw: string,
-  assets: { id: string; name: string; symbol: string; decimals: number | null }[] | null,
+  assets:
+    | { id: string; name: string; symbol: string; decimals: number | null }[]
+    | null,
   collections: { id: string }[] | null,
 ): { text: string; links?: { href: string; label: string }[] } | null {
   const query = raw.trim();
   if (!query) return null;
   if (/^0x[0-9a-fA-F]{40}$/.test(query)) {
     return {
-      text: "EVM address recognized. This shell does not look up an arbitrary address, and it does not treat an EVM native balance as tPOT.",
+      text: "This is an EVM address. Account search supports native Substrate accounts; Base payment accounts are separate.",
     };
   }
   if (/^5[1-9A-HJ-NP-Za-km-z]{47}$/.test(query)) {
     return {
-      text: "Substrate address recognized. Connect that account in the wallet to read its free balance. Arbitrary address lookup is not connected.",
+      text: "View this public Substrate account. No wallet connection is required.",
+      links: [
+        {
+          href: `/account/${encodeURIComponent(query)}`,
+          label: "Open account overview",
+        },
+      ],
     };
   }
   if (/^\d+$/.test(query)) {
@@ -193,8 +257,23 @@ function searchResult(
       links: [{ href: `/collection/${query}`, label: "Open collection" }],
     };
   }
-  const matches = assets?.filter(row => `${row.name} ${row.symbol}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8) ?? [];
-  return matches.length ? { text: "Matching tokens from the loaded network snapshot:", links: matches.map(row => ({ href: `/token/${row.id}`, label: `${row.name} (${row.symbol}) #${row.id}` })) } : { text: "No loaded token matches. Search by token name, symbol, asset ID, collection ID, or address. Discovery may still be partial." };
+  const matches =
+    assets
+      ?.filter((row) =>
+        `${row.name} ${row.symbol}`.toLowerCase().includes(query.toLowerCase()),
+      )
+      .slice(0, 8) ?? [];
+  return matches.length
+    ? {
+        text: "Matching tokens from the loaded network snapshot:",
+        links: matches.map((row) => ({
+          href: `/token/${row.id}`,
+          label: `${row.name} (${row.symbol}) #${row.id}`,
+        })),
+      }
+    : {
+        text: "No loaded token matches. Search by token name, symbol, asset ID, collection ID, or address. Discovery may still be partial.",
+      };
 }
 
 function SearchBox() {
@@ -242,7 +321,7 @@ function SearchBox() {
         id={formId}
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Search assets, collections, addresses…"
+        placeholder="Tokens, collection IDs, Substrate accounts…"
         className="topbar-search h-10 w-full rounded-xl border border-line bg-panel/60 pr-3 pl-9 text-xs text-ink placeholder:text-faint"
       />
       {result ? (
@@ -252,7 +331,11 @@ function SearchBox() {
         >
           <p>{result.text}</p>
           {result.links?.map((link) => (
-            <Link key={link.href} href={link.href} className="mt-2 mr-4 inline-block text-blue hover:underline">
+            <Link
+              key={link.href}
+              href={link.href}
+              className="mt-2 mr-4 inline-block text-blue hover:underline"
+            >
               {link.label}
             </Link>
           ))}

@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/shell/app-shell";
 import "./globals.css";
+import "./product.css";
 
 const sans = Manrope({
   subsets: ["latin"],
@@ -18,15 +19,20 @@ const mono = IBM_Plex_Mono({
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Portova — Create. Launch. Trade. Own.",
-  description: "A home for your next onchain idea. Create native tokens, launch NFT collections, and bring your assets together on Portaldot V3 Testnet.",
+  title: "Portova — Launch and operate on Portaldot",
+  description:
+    "Launch native assets, bring an existing project into one workspace, and monitor changes with your team on Portaldot V3 Testnet.",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" data-scroll-behavior="smooth" className={`${sans.variable} ${mono.variable}`}>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${sans.variable} ${mono.variable}`}
+    >
       <body className="font-sans antialiased">
         <Providers>
           <AppShell>{children}</AppShell>

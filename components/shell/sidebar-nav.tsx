@@ -8,28 +8,46 @@ export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Primary" className="sidebar-navigation flex flex-1 flex-col overflow-y-auto">
+    <nav
+      aria-label="Primary"
+      className="sidebar-navigation flex flex-1 flex-col overflow-y-auto"
+    >
       {[
-        { label: "Discover", hrefs: ["/overview", "/explore"] },
-        { label: "Create & trade", hrefs: ["/launch", "/token-launchpad", "/nft-launchpad", "/swap", "/liquidity", "/market"] },
-        { label: "Your workspace", hrefs: ["/workspace", "/studio", "/portfolio", "/treasury"] },
-        { label: "Resources", hrefs: ["/pricing", "/run", "/activity", "/settings"] },
-      ].map((group) => <div key={group.label} className="nav-group"><p>{group.label}</p>{group.hrefs.map((href) => NAV_ITEMS.find((item) => item.href === href)!).map((item) => {
-        const active = isActive(pathname, item.href);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            className={`sidebar-link ${active ? "sidebar-link-active" : ""}`}
-          >
-            <Icon size={17} strokeWidth={1.7} aria-hidden />
-            {item.label}
-            {active ? <span className="nav-active-dot" /> : null}
-          </Link>
-        );
-      })}</div>)}
+        {
+          label: "Build & discover",
+          hrefs: ["/workspace", "/explore", "/launch", "/import"],
+        },
+        {
+          label: "Network",
+          hrefs: ["/network", "/swap", "/liquidity", "/portfolio"],
+        },
+        {
+          label: "Resources",
+          hrefs: ["/pricing", "/bridge", "/tools", "/settings"],
+        },
+      ].map((group) => (
+        <div key={group.label} className="nav-group">
+          <p>{group.label}</p>
+          {group.hrefs
+            .map((href) => NAV_ITEMS.find((item) => item.href === href)!)
+            .map((item) => {
+              const active = isActive(pathname, item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`sidebar-link ${active ? "sidebar-link-active" : ""}`}
+                >
+                  <Icon size={17} strokeWidth={1.7} aria-hidden />
+                  {item.label}
+                  {active ? <span className="nav-active-dot" /> : null}
+                </Link>
+              );
+            })}
+        </div>
+      ))}
     </nav>
   );
 }

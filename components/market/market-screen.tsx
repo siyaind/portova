@@ -12,7 +12,14 @@ import { reviewExtrinsic } from "@/lib/preflight";
 import { WALLET_MOVE_WARNING } from "@/lib/quote-window";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
 import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
-import { buildBuyItem, buildSetPrice, readItemSale, readTradingEnabled, readListingsPage, type Listing } from "@/lib/market";
+import {
+  buildBuyItem,
+  buildSetPrice,
+  readItemSale,
+  readTradingEnabled,
+  readListingsPage,
+  type Listing,
+} from "@/lib/market";
 import { saleResultIsCurrent } from "@/lib/sale-request";
 import { readItemProfile } from "@/lib/nfts";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
@@ -28,14 +35,18 @@ export function MarketScreen() {
   const signer = wallet.selected;
   const [trading, setTrading] = useState<boolean | null>(null);
   const [listings, setListings] = useState<Listing[] | null>(null);
-  const [scanState, setScanState] = useState<"idle" | "reading" | "ready" | "error">("idle");
+  const [scanState, setScanState] = useState<
+    "idle" | "reading" | "ready" | "error"
+  >("idle");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanCursor, setScanCursor] = useState<string | null>(null);
   const [scanBlock, setScanBlock] = useState<string | null>(null);
   const [scanComplete, setScanComplete] = useState(false);
   const [scanned, setScanned] = useState(0);
   const scanGeneration = useRef(0);
-  const [collectionId, setCollectionId] = useState(params.get("collection") ?? "");
+  const [collectionId, setCollectionId] = useState(
+    params.get("collection") ?? "",
+  );
   const [itemId, setItemId] = useState(params.get("item") ?? "");
   const [price, setPrice] = useState("");
   const [buyer, setBuyer] = useState("");
@@ -43,7 +54,13 @@ export function MarketScreen() {
   const [sale, setSale] = useState<Listing | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const { signAndSend } = useWalletOperation({ collectionId, itemId, price, buyer, bid });
+  const { signAndSend } = useWalletOperation({
+    collectionId,
+    itemId,
+    price,
+    buyer,
+    bid,
+  });
 
   useEffect(() => {
     const api = chain.getApi();
@@ -58,11 +75,18 @@ export function MarketScreen() {
     scanGeneration.current += 1;
     setScanState("reading");
     setScanError(null);
-    setScanComplete(false); setScanCursor(null); setScanBlock(null); setScanned(0);
+    setScanComplete(false);
+    setScanCursor(null);
+    setScanBlock(null);
+    setScanned(0);
     void readListingsPage(api)
       .then((next) => {
         if (cancelled) return;
-        setListings(next.rows); setScanCursor(next.nextCursor); setScanBlock(next.blockHash); setScanComplete(next.complete); setScanned(next.scanned);
+        setListings(next.rows);
+        setScanCursor(next.nextCursor);
+        setScanBlock(next.blockHash);
+        setScanComplete(next.complete);
+        setScanned(next.scanned);
         setScanState("ready");
       })
       .catch((cause: unknown) => {
@@ -77,19 +101,33 @@ export function MarketScreen() {
   }, [chain.status, chain.getApi]);
 
   async function loadMoreListings() {
-    const api = chain.getApi(); if (!api || !scanCursor || !scanBlock || scanState === "reading") return;
+    const api = chain.getApi();
+    if (!api || !scanCursor || !scanBlock || scanState === "reading") return;
     const generation = scanGeneration.current;
     setScanState("reading");
     try {
-      const next = await readListingsPage(api, { cursor: scanCursor, blockHash: scanBlock });
+      const next = await readListingsPage(api, {
+        cursor: scanCursor,
+        blockHash: scanBlock,
+      });
       if (generation !== scanGeneration.current) return;
-      setListings(rows => [...(rows ?? []), ...next.rows]); setScanCursor(next.nextCursor); setScanComplete(next.complete); setScanned(value => value + next.scanned); setScanState("ready");
-    } catch (cause) { if (generation === scanGeneration.current) { setScanError(errorText(cause)); setScanState("error"); } }
+      setListings((rows) => [...(rows ?? []), ...next.rows]);
+      setScanCursor(next.nextCursor);
+      setScanComplete(next.complete);
+      setScanned((value) => value + next.scanned);
+      setScanState("ready");
+    } catch (cause) {
+      if (generation === scanGeneration.current) {
+        setScanError(errorText(cause));
+        setScanState("error");
+      }
+    }
   }
 
   const tradingOff = trading !== true;
   const saleKey = `${collectionId.trim()}:${itemId.trim()}`;
-  const idsValid = /^\d+$/.test(collectionId.trim()) && /^\d+$/.test(itemId.trim());
+  const idsValid =
+    /^\d+$/.test(collectionId.trim()) && /^\d+$/.test(itemId.trim());
   const saleRequest = useRef(0);
 
   useEffect(() => {
@@ -108,7 +146,13 @@ export function MarketScreen() {
     }
     const collection = collectionId.trim();
     const itemIdValue = itemId.trim();
-    const stillCurrent = () => saleResultIsCurrent(request, saleRequest.current, key, `${collectionId.trim()}:${itemId.trim()}`);
+    const stillCurrent = () =>
+      saleResultIsCurrent(
+        request,
+        saleRequest.current,
+        key,
+        `${collectionId.trim()}:${itemId.trim()}`,
+      );
     try {
       const [nextSale, item] = await Promise.all([
         readItemSale(api, collection, itemIdValue),
@@ -137,7 +181,9 @@ export function MarketScreen() {
       return;
     }
     if (trading !== true) {
-      setMessage("Trading is disabled on this runtime, so the wallet was not asked to sign.");
+      setMessage(
+        "Trading is disabled on this runtime, so the wallet was not asked to sign.",
+      );
       return;
     }
     const api = chain.getApi();
@@ -170,7 +216,8 @@ export function MarketScreen() {
     try {
       const { web3FromSource } = await import("@polkadot/extension-dapp");
       const injected = await web3FromSource(signer.source);
-      if (!injected.signer) throw new Error("This wallet did not provide a signer.");
+      if (!injected.signer)
+        throw new Error("This wallet did not provide a signer.");
       let tx;
       let label = "";
       let debits: Array<bigint | null> = [0n];
@@ -181,10 +228,16 @@ export function MarketScreen() {
           setMessage("The owner cannot buy their own item.");
           return;
         }
-        const listed = await readItemSale(api, String(collection), String(item));
+        const listed = await readItemSale(
+          api,
+          String(collection),
+          String(item),
+        );
         const bidRaw = parseDecimalToPlanck(bid, NATIVE_DECIMALS);
         if (!listed.listed || !listed.price || bidRaw === null) {
-          setMessage("This item is not listed, or the bid is not a tPOT amount.");
+          setMessage(
+            "This item is not listed, or the bid is not a tPOT amount.",
+          );
           return;
         }
         if (listed.buyer && listed.buyer !== signer.address) {
@@ -216,10 +269,18 @@ export function MarketScreen() {
           }
           const namedBuyer = buyer.trim();
           if (namedBuyer && !isProceedsAddress(namedBuyer)) {
-            setMessage("The named buyer is not a testnet address, so the wallet was not opened.");
+            setMessage(
+              "The named buyer is not a testnet address, so the wallet was not opened.",
+            );
             return;
           }
-          tx = buildSetPrice(api, collection, item, priceRaw, namedBuyer || null);
+          tx = buildSetPrice(
+            api,
+            collection,
+            item,
+            priceRaw,
+            namedBuyer || null,
+          );
           label = `List item ${collection}/${item}`;
         }
       }
@@ -231,10 +292,16 @@ export function MarketScreen() {
       const listingStillCurrent = async () => {
         if (kind !== "buy") return true;
         const again = await readItemSale(api, String(collection), String(item));
-        return Boolean(again.listed && again.price === reviewedPrice && again.buyer === reviewedBuyer);
+        return Boolean(
+          again.listed &&
+            again.price === reviewedPrice &&
+            again.buyer === reviewedBuyer,
+        );
       };
       if (!(await listingStillCurrent())) {
-        setMessage("The listing changed after the fee check. Nothing was submitted.");
+        setMessage(
+          "The listing changed after the fee check. Nothing was submitted.",
+        );
         return;
       }
       txs.push({ id, label, status: "signing" });
@@ -247,7 +314,8 @@ export function MarketScreen() {
         undefined,
         kind === "buy" ? listingStillCurrent : undefined,
       );
-      if (result.status === "finalized" || result.status === "included") await loadSale();
+      if (result.status === "finalized" || result.status === "included")
+        await loadSale();
       setMessage(txResultMessage(result.status, result.error));
     } catch (cause) {
       const text = errorText(cause);
@@ -261,15 +329,17 @@ export function MarketScreen() {
   return (
     <div className="space-y-6">
       <PageIntro
-        eyebrow="NFT marketplace"
-        title="Fixed-price items"
-        body="A listing is nfts.set_price. A purchase is nfts.buy_item. The bid is paid in tPOT to the seller. This pallet has no royalty and no marketplace fee."
+        eyebrow="NFT gallery"
+        title="Collections & trading availability"
+        body="Browse fixed-price listings when native trading is available. Prices use tPOT on Portaldot V3 Testnet."
       />
       <Panel className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Trading feature</h2>
           {trading === null ? (
-            <StatusPill tone="warn">{chain.status === "connecting" ? "Reading" : "Unknown"}</StatusPill>
+            <StatusPill tone="warn">
+              {chain.status === "connecting" ? "Reading" : "Unknown"}
+            </StatusPill>
           ) : trading ? (
             <StatusPill tone="ok">Enabled</StatusPill>
           ) : (
@@ -278,18 +348,25 @@ export function MarketScreen() {
         </div>
         <p className="mt-3 text-sm leading-6 text-muted">
           {trading === false
-            ? "Nfts.Features is 0. Trading is bit 1, so set_price and buy_item are disabled by the runtime. A signature would fail with MethodDisabled. The buttons stay off."
+            ? "Native NFT trading is disabled on the connected network. You can inspect listings, but buying and listing remain unavailable until the network enables this feature."
             : trading === true
-              ? "The runtime has the Trading bit set. List and buy each ask for their own signature."
+              ? "Native NFT trading is available. Listing or buying requires a separate wallet approval."
               : chain.status === "connecting"
                 ? "Reading the testnet."
                 : "The feature flag has not been read yet."}
         </p>
       </Panel>
       <Panel>
-        <div className="border-b border-line px-4 py-3 text-sm font-medium">Listed items</div>
-        <p className="px-4 pt-3 text-xs leading-6 text-muted">{scanBlock ? `${scanned} price entries checked at snapshot ${scanBlock.slice(0, 12)}… · ${scanComplete ? "Complete at this snapshot" : "Partial scan — more pages available"}` : "Enumerating stored price keys; no collection or item-ID probe limit."}</p>
-        {scanState === "reading" || (listings === null && scanState !== "error") ? (
+        <div className="border-b border-line px-4 py-3 text-sm font-medium">
+          Listed items
+        </div>
+        <p className="px-4 pt-3 text-xs leading-6 text-muted">
+          {scanBlock
+            ? `${scanned} price entries checked at snapshot ${scanBlock.slice(0, 12)}… · ${scanComplete ? "Complete at this snapshot" : "Partial scan — more pages available"}`
+            : "Enumerating stored price keys; no collection or item-ID probe limit."}
+        </p>
+        {scanState === "reading" ||
+        (listings === null && scanState !== "error") ? (
           <p className="px-4 py-6 text-sm text-muted">
             {chain.status === "connecting"
               ? "Waiting for the testnet connection."
@@ -301,7 +378,9 @@ export function MarketScreen() {
           </p>
         ) : listings === null || listings.length === 0 ? (
           <p className="px-4 py-6 text-sm leading-6 text-muted">
-            {scanComplete ? "No listed item was found in stored price entries at this snapshot." : "No listed item was found in the pages checked so far. More entries remain to be searched."}
+            {scanComplete
+              ? "No listed item was found in stored price entries at this snapshot."
+              : "No listed item was found in the pages checked so far. More entries remain to be searched."}
           </p>
         ) : (
           <div className="max-w-full overflow-x-auto">
@@ -315,7 +394,10 @@ export function MarketScreen() {
               </thead>
               <tbody>
                 {listings.map((listing) => (
-                  <tr key={`${listing.collectionId}-${listing.itemId}`} className="border-b border-line">
+                  <tr
+                    key={`${listing.collectionId}-${listing.itemId}`}
+                    className="border-b border-line"
+                  >
                     <td className="px-4 py-3">
                       <button
                         type="button"
@@ -324,44 +406,97 @@ export function MarketScreen() {
                           setCollectionId(listing.collectionId);
                           setItemId(listing.itemId);
                           setSale(listing);
-                          if (listing.price) setBid(formatUnits(listing.price, NATIVE_DECIMALS));
+                          if (listing.price)
+                            setBid(formatUnits(listing.price, NATIVE_DECIMALS));
                         }}
                       >
                         {listing.collectionId}/{listing.itemId}
                       </button>
                     </td>
                     <td className="px-4 py-3 font-mono">
-                      {listing.price ? `${formatUnits(listing.price, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}` : "Unavailable"}
+                      {listing.price
+                        ? `${formatUnits(listing.price, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}`
+                        : "Unavailable"}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs break-all">{listing.owner ?? "Unavailable"}</td>
+                    <td className="px-4 py-3 font-mono text-xs break-all">
+                      {listing.owner ?? "Unavailable"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        {scanCursor && <button type="button" className="m-4 text-sm text-violet" disabled={scanState === "reading"} onClick={() => void loadMoreListings()}>Load next page of listings</button>}
+        {scanCursor && (
+          <button
+            type="button"
+            className="m-4 text-sm text-violet"
+            disabled={scanState === "reading"}
+            onClick={() => void loadMoreListings()}
+          >
+            Load next page of listings
+          </button>
+        )}
       </Panel>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Panel className="space-y-4 p-4">
           <h2 className="text-sm font-medium">List or cancel</h2>
-          <IdFields collectionId={collectionId} itemId={itemId} onCollection={setCollectionId} onItem={setItemId} />
+          <IdFields
+            collectionId={collectionId}
+            itemId={itemId}
+            onCollection={setCollectionId}
+            onItem={setItemId}
+          />
           <label className="block text-xs text-muted">
             Price ({NATIVE_SYMBOL})
-            <input className={`${FIELD} mt-1.5 font-mono`} inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />
+            <input
+              className={`${FIELD} mt-1.5 font-mono`}
+              inputMode="decimal"
+              value={price}
+              onChange={(event) => setPrice(event.target.value)}
+            />
           </label>
           <label className="block text-xs text-muted">
             Only this buyer
-            <input className={`${FIELD} mt-1.5 font-mono text-xs`} value={buyer} placeholder="Blank means any account" onChange={(event) => setBuyer(event.target.value)} />
+            <input
+              className={`${FIELD} mt-1.5 font-mono text-xs`}
+              value={buyer}
+              placeholder="Blank means any account"
+              onChange={(event) => setBuyer(event.target.value)}
+            />
           </label>
           <div className="flex flex-wrap gap-2">
-            <Action disabled={tradingOff || Boolean(busy)} onClick={() => void submit("list")}>
-              {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "list" ? "Waiting for the wallet…" : signer ? "List item" : "Connect Substrate wallet"}
+            <Action
+              disabled={tradingOff || Boolean(busy)}
+              onClick={() => void submit("list")}
+            >
+              {trading === null
+                ? "Reading"
+                : tradingOff
+                  ? "Trading disabled"
+                  : busy === "list"
+                    ? "Waiting for the wallet…"
+                    : signer
+                      ? "List item"
+                      : "Connect Substrate wallet"}
             </Action>
-            <Action disabled={tradingOff || Boolean(busy)} onClick={() => void submit("cancel")}>
-              {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "cancel" ? "Waiting…" : "Cancel listing"}
+            <Action
+              disabled={tradingOff || Boolean(busy)}
+              onClick={() => void submit("cancel")}
+            >
+              {trading === null
+                ? "Reading"
+                : tradingOff
+                  ? "Trading disabled"
+                  : busy === "cancel"
+                    ? "Waiting…"
+                    : "Cancel listing"}
             </Action>
-            <button type="button" className="rounded-lg border border-line px-3 py-2 text-sm" onClick={() => void loadSale()}>
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-2 text-sm"
+              onClick={() => void loadSale()}
+            >
               Read price
             </button>
           </div>
@@ -377,15 +512,39 @@ export function MarketScreen() {
                   ? "This item has no price. It is not for sale."
                   : "Read the item before buying. An unread item is not treated as free."}
           </p>
-          {sale?.owner ? <p className="font-mono text-xs break-all text-muted">Owner {sale.owner}</p> : null}
-          {sale?.metadata ? <p className="font-mono text-xs break-all text-faint">{sale.metadata}</p> : null}
+          {sale?.owner ? (
+            <p className="font-mono text-xs break-all text-muted">
+              Owner {sale.owner}
+            </p>
+          ) : null}
+          {sale?.metadata ? (
+            <p className="font-mono text-xs break-all text-faint">
+              {sale.metadata}
+            </p>
+          ) : null}
           <label className="block text-xs text-muted">
             Bid ({NATIVE_SYMBOL})
-            <input className={`${FIELD} mt-1.5 font-mono`} inputMode="decimal" value={bid} onChange={(event) => setBid(event.target.value)} />
+            <input
+              className={`${FIELD} mt-1.5 font-mono`}
+              inputMode="decimal"
+              value={bid}
+              onChange={(event) => setBid(event.target.value)}
+            />
           </label>
           <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
-          <Action disabled={tradingOff || Boolean(busy) || !sale?.listed} onClick={() => void submit("buy")}>
-            {trading === null ? "Reading" : tradingOff ? "Trading disabled" : busy === "buy" ? "Waiting for the wallet…" : signer ? "Buy item" : "Connect Substrate wallet"}
+          <Action
+            disabled={tradingOff || Boolean(busy) || !sale?.listed}
+            onClick={() => void submit("buy")}
+          >
+            {trading === null
+              ? "Reading"
+              : tradingOff
+                ? "Trading disabled"
+                : busy === "buy"
+                  ? "Waiting for the wallet…"
+                  : signer
+                    ? "Buy item"
+                    : "Connect Substrate wallet"}
           </Action>
           <p className="text-xs leading-5 text-faint">
             The bid is paid to the seller.{" "}
@@ -395,7 +554,9 @@ export function MarketScreen() {
           </p>
         </Panel>
       </div>
-      {message ? <p className="text-sm leading-6 text-warn">{message}</p> : null}
+      {message ? (
+        <p className="text-sm leading-6 text-warn">{message}</p>
+      ) : null}
     </div>
   );
 }
@@ -415,11 +576,21 @@ function IdFields({
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="block text-xs text-muted">
         Collection
-        <input className={`${FIELD} mt-1.5 font-mono`} inputMode="numeric" value={collectionId} onChange={(event) => onCollection(event.target.value)} />
+        <input
+          className={`${FIELD} mt-1.5 font-mono`}
+          inputMode="numeric"
+          value={collectionId}
+          onChange={(event) => onCollection(event.target.value)}
+        />
       </label>
       <label className="block text-xs text-muted">
         Item
-        <input className={`${FIELD} mt-1.5 font-mono`} inputMode="numeric" value={itemId} onChange={(event) => onItem(event.target.value)} />
+        <input
+          className={`${FIELD} mt-1.5 font-mono`}
+          inputMode="numeric"
+          value={itemId}
+          onChange={(event) => onItem(event.target.value)}
+        />
       </label>
     </div>
   );

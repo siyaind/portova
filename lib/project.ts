@@ -2,6 +2,11 @@ import { checkAddress } from "@polkadot/util-crypto";
 import type { PoolView } from "@/lib/pools";
 import { SS58_PREFIX } from "./network.ts";
 import { sameAccount } from "./withdrawal.ts";
+import {
+  PROJECT_CATEGORIES,
+  safeWebsite,
+  type ProjectProfile,
+} from "./directory.ts";
 
 export const PROJECT_STORAGE_KEY = "portova.creator-project.v1";
 
@@ -10,6 +15,7 @@ const U32_MAX = BigInt("4294967295");
 export type CreatorProject = {
   id?: string;
   revision?: number;
+  profile?: ProjectProfile;
   launch?: { kind: "token" | "nft"; liquidity: boolean };
   name: string;
   assetId: string;
@@ -29,14 +35,42 @@ export type StageKind =
   | "disabled";
 
 export function blankProject(): CreatorProject {
-  return { name: "", assetId: "", collectionId: "", poolLpToken: "", proceeds: "" };
+  return {
+    name: "",
+    assetId: "",
+    collectionId: "",
+    poolLpToken: "",
+    proceeds: "",
+  };
 }
 
 export function normalizeProject(input: CreatorProject): CreatorProject {
   return {
-    ...(typeof input.id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(input.id) ? { id: input.id } : {}),
-    ...(Number.isSafeInteger(input.revision) && input.revision! >= 0 ? { revision: input.revision } : {}),
-    ...(input.launch && ["token", "nft"].includes(input.launch.kind) && typeof input.launch.liquidity === "boolean" ? { launch: { kind: input.launch.kind, liquidity: input.launch.kind === "token" && input.launch.liquidity } } : {}),
+    ...(typeof input.id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(input.id)
+      ? { id: input.id }
+      : {}),
+    ...(Number.isSafeInteger(input.revision) && input.revision! >= 0
+      ? { revision: input.revision }
+      : {}),
+    ...(input.profile
+      ? {
+          profile: {
+            category: input.profile.category,
+            website: input.profile.website.trim(),
+            example: input.profile.example === true,
+          },
+        }
+      : {}),
+    ...(input.launch &&
+    ["token", "nft"].includes(input.launch.kind) &&
+    typeof input.launch.liquidity === "boolean"
+      ? {
+          launch: {
+            kind: input.launch.kind,
+            liquidity: input.launch.kind === "token" && input.launch.liquidity,
+          },
+        }
+      : {}),
     name: input.name.trim(),
     assetId: input.assetId.trim(),
     collectionId: input.collectionId.trim(),
@@ -63,9 +97,20 @@ function idError(label: string, value: string): string | null {
 }
 
 export function projectError(project: CreatorProject): string | null {
-  if (!project.name) return "Enter a project name. The name stays in this browser.";
-  if (project.name.length > 48) return "Use a project name of 48 characters or fewer.";
-  if (/[\u0000-\u001f]/.test(project.name)) return "The project name cannot contain a line break.";
+  if (
+    project.profile &&
+    (!(PROJECT_CATEGORIES as readonly string[]).includes(
+      project.profile.category,
+    ) ||
+      safeWebsite(project.profile.website) === null)
+  )
+    return "Choose a project category and use an HTTPS website without credentials.";
+  if (!project.name)
+    return "Enter a project name. The name stays in this browser.";
+  if (project.name.length > 48)
+    return "Use a project name of 48 characters or fewer.";
+  if (/[\u0000-\u001f]/.test(project.name))
+    return "The project name cannot contain a line break.";
   return (
     idError("Asset id", project.assetId) ??
     idError("Collection id", project.collectionId) ??
@@ -81,11 +126,20 @@ export function parseProject(raw: string | null): CreatorProject | null {
   try {
     const value = JSON.parse(raw) as Partial<CreatorProject>;
     const project = normalizeProject({
-      id: value.id, revision: value.revision, launch: value.launch,
+      id: value.id,
+      revision: value.revision,
+      launch: value.launch,
+      ...(value.profile &&
+      typeof value.profile === "object" &&
+      typeof value.profile.website === "string"
+        ? { profile: value.profile }
+        : {}),
       name: typeof value.name === "string" ? value.name : "",
       assetId: typeof value.assetId === "string" ? value.assetId : "",
-      collectionId: typeof value.collectionId === "string" ? value.collectionId : "",
-      poolLpToken: typeof value.poolLpToken === "string" ? value.poolLpToken : "",
+      collectionId:
+        typeof value.collectionId === "string" ? value.collectionId : "",
+      poolLpToken:
+        typeof value.poolLpToken === "string" ? value.poolLpToken : "",
       proceeds: typeof value.proceeds === "string" ? value.proceeds : "",
     });
     return projectError(project) ? null : project;
@@ -95,17 +149,54 @@ export function parseProject(raw: string | null): CreatorProject | null {
 }
 
 export type ProjectField = "assetId" | "collectionId" | "poolLpToken";
-export function saveProjectVersion(current: CreatorProject | null, next: CreatorProject): CreatorProject {
-  if ((current?.id ?? null) !== (next.id ?? null) || (current?.revision ?? 0) !== (next.revision ?? 0)) throw Error("The project was updated in another tab. Reload the current project before saving this draft.");
-  return { ...next, id: current?.id ?? crypto.randomUUID(), revision: (current?.revision ?? 0) + 1 };
+export function saveProjectVersion(
+  current: CreatorProject | null,
+  next: CreatorProject,
+): CreatorProject {
+  if (
+    (current?.id ?? null) !== (next.id ?? null) ||
+    (current?.revision ?? 0) !== (next.revision ?? 0)
+  )
+    throw Error(
+      "The project was updated in another tab. Reload the current project before saving this draft.",
+    );
+  return {
+    ...next,
+    id: current?.id ?? crypto.randomUUID(),
+    revision: (current?.revision ?? 0) + 1,
+  };
 }
-export function attachProjectObject(project: CreatorProject | null, expectedId: string, field: ProjectField, objectId: string, actor: string): CreatorProject {
-  if (!project || project.id !== expectedId) throw Error("The project changed while the transaction was open. Its receipt is saved; link the object in Studio.");
-  if (idError("Object ID", objectId) || !objectId) throw Error("The finalized object ID is invalid.");
-  if (project[field] && project[field] !== objectId) throw Error("The project already links a different object. Review the saved receipt and update Studio explicitly.");
-  if (!isProceedsAddress(actor) || (project.proceeds && !sameAccount(project.proceeds, actor))) throw Error("This transaction belongs to another account. Review the linked account in Studio before attaching it.");
+export function attachProjectObject(
+  project: CreatorProject | null,
+  expectedId: string,
+  field: ProjectField,
+  objectId: string,
+  actor: string,
+): CreatorProject {
+  if (!project || project.id !== expectedId)
+    throw Error(
+      "The project changed while the transaction was open. Its receipt is saved; link the object in Studio.",
+    );
+  if (idError("Object ID", objectId) || !objectId)
+    throw Error("The finalized object ID is invalid.");
+  if (project[field] && project[field] !== objectId)
+    throw Error(
+      "The project already links a different object. Review the saved receipt and update Studio explicitly.",
+    );
+  if (
+    !isProceedsAddress(actor) ||
+    (project.proceeds && !sameAccount(project.proceeds, actor))
+  )
+    throw Error(
+      "This transaction belongs to another account. Review the linked account in Studio before attaching it.",
+    );
   if (project[field] === objectId && project.proceeds) return project;
-  return { ...project, [field]: objectId, proceeds: project.proceeds || actor, revision: (project.revision ?? 0) + 1 };
+  return {
+    ...project,
+    [field]: objectId,
+    proceeds: project.proceeds || actor,
+    revision: (project.revision ?? 0) + 1,
+  };
 }
 
 export function linkedIdStage(
@@ -115,7 +206,8 @@ export function linkedIdStage(
   found: boolean,
 ): StageKind {
   if (!id) return "not-started";
-  if (online === "connecting" || (online === "live" && read === "pending")) return "reading";
+  if (online === "connecting" || (online === "live" && read === "pending"))
+    return "reading";
   if (online === "unavailable" || read === "error") return "unavailable";
   return found ? "on-chain" : "missing";
 }
@@ -152,6 +244,7 @@ export function stageLabel(kind: StageKind): string {
 
 export function stageTone(kind: StageKind): "ok" | "warn" | "muted" {
   if (kind === "on-chain") return "ok";
-  if (kind === "missing" || kind === "disabled" || kind === "reading") return "warn";
+  if (kind === "missing" || kind === "disabled" || kind === "reading")
+    return "warn";
   return "muted";
 }
