@@ -7,6 +7,7 @@ This release adds code and isolated database tests. It remains a testnet applica
 Use separate databases, Redis instances, billing keys and webhook secrets for staging and production. Add credentials only through the hosting/provider configuration. Do not commit or paste secrets. Node.js 22+ is required.
 
 - `DATABASE_URL` or `POSTGRES_URL`: Neon Postgres connection.
+- `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING`: direct connection for the migration runner and its session lock. Marketplace integrations normally supply this alongside the pooled application URL.
 - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (integration `KV_REST_API_*` aliases work).
 - `PORTOVA_ORIGIN`: exact HTTPS deployment origin (default production hostname).
 - `RATE_LIMIT_SALT`: random private value for hashing trusted proxy client identifiers.

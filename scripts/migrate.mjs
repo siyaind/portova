@@ -1,8 +1,9 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { Client, neonConfig } from '@neondatabase/serverless';
-const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
-if (!url) throw Error('Set DATABASE_URL through the environment before migrating. Do not put credentials in command arguments.');
+const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.POSTGRES_URL_NON_POOLING ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+if (!url) throw Error('Set a direct Neon database URL through the environment before migrating. Do not put credentials in command arguments.');
+if (new URL(url).hostname.includes('-pooler.')) throw Error('Migrations require DATABASE_URL_UNPOOLED or POSTGRES_URL_NON_POOLING so the advisory lock stays on one database session.');
 neonConfig.webSocketConstructor = globalThis.WebSocket;
 const client = new Client(url); await client.connect();
 const sql = async (text, params=[]) => (await client.query(text,params)).rows;
@@ -20,4 +21,6 @@ for (const name of files) {
   console.log(`Applied ${name}`);
 }
 
-} finally { await client.end(); }
+} finally {
+  try { await sql("SELECT pg_advisory_unlock(718291)"); } finally { await client.end(); }
+}
