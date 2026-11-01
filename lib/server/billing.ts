@@ -14,7 +14,7 @@ export async function billingAction(account:string,command:{action:'billing'}|{a
   }
   if(!billingConfigured())throw Object.assign(Error('Crypto checkout is awaiting configuration. No payment was requested.'),{status:503});
   const recipient=getAddress(process.env.CRYPTO_PAYMENT_RECIPIENT!.toLowerCase());
-  const amount=PLANS[command.plan].monthlyUsd*1000000;
+  const amount=PLANS[command.plan].priceUsdc*1000000;
   await sql`INSERT INTO portova_crypto_invoices(id,account,plan,amount,recipient,chain_id,token,expires_at) VALUES(${requestId}::uuid,${account},${command.plan},${amount},${recipient},${PAYMENT_CHAIN},${PAYMENT_TOKEN},now()+interval '1 hour') ON CONFLICT(id) DO NOTHING`;
   const [row]=await sql`SELECT * FROM portova_crypto_invoices WHERE id=${requestId}::uuid AND account=${account}`;
   return {invoice:invoiceFromRow(row),configured:true};

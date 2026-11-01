@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {PGlite} from "@electric-sql/pglite";
 const db=new PGlite();
-before(async()=> {await db.exec(await readFile(new URL('../scripts/cloud-schema.sql',import.meta.url),'utf8'));for(const file of ['002-workspaces.sql','003-indexer.sql','004-crypto-payments.sql','005-crypto-entitlements.sql'])await db.exec(await readFile(new URL(`../scripts/migrations/${file}`,import.meta.url),'utf8'));});
+before(async()=> {await db.exec(await readFile(new URL('../scripts/cloud-schema.sql',import.meta.url),'utf8'));for(const file of ['002-workspaces.sql','003-indexer.sql','004-crypto-payments.sql','005-crypto-entitlements.sql','006-pilot-pricing.sql'])await db.exec(await readFile(new URL(`../scripts/migrations/${file}`,import.meta.url),'utf8'));});
 after(async()=>{await db.close();});
 async function command(owner:string,payload:unknown,id=crypto.randomUUID()) {
   await db.query("INSERT INTO portova_challenges(id,owner,payload,message,expires_at) VALUES($1,$2,$3,'signed by API',now()+interval '5 minutes') ON CONFLICT DO NOTHING",[id,owner,JSON.stringify(payload)]);
@@ -91,4 +91,9 @@ test('crypto credit is idempotent and paid terms do not overlap',async()=>{
 });
 test('a payment transaction cannot be assigned twice',async()=>{
   const id=crypto.randomUUID();await assert.rejects(db.query("INSERT INTO portova_crypto_invoices(id,account,plan,amount,recipient,chain_id,token,expires_at,tx_hash) SELECT $1,'attacker','pro',49000000,'recipient',8453,'token',now()+interval '1 hour',tx_hash FROM portova_crypto_invoices WHERE account='crypto-user' LIMIT 1",[id]),/unique/);
+});
+
+test('lower pilot invoice amount is accepted while zero-value invoices are refused',async()=>{
+  const id=crypto.randomUUID();await db.query("INSERT INTO portova_crypto_invoices(id,account,plan,amount,recipient,chain_id,token,expires_at) VALUES($1,'pricing-check','pro',19000000,'recipient',8453,'token',now()+interval '1 hour')",[id]);
+  await assert.rejects(db.query("UPDATE portova_crypto_invoices SET amount=0 WHERE id=$1",[id]),/check constraint/);
 });

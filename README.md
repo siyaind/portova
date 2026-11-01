@@ -145,7 +145,7 @@ See [guided launch, technical changes and acceptance boundaries](docs/GUIDED_LAU
 
 ## November 1 operations workspace
 
-Open `/workspace` for cloud project selection, accepted wallet invitations, viewer/editor access, audit history, monitored changes and bounded activity reports. `/pricing` describes Explorer, optional Pro (49 USDC/30 days) and Team (149 USDC/30 days), with pilot inquiries. Crypto checkout is disabled during the pilot. It uses native USDC on Base if explicitly enabled. No app transaction fee or Portova token is introduced.
+Open `/workspace` for cloud project selection, accepted wallet invitations, viewer/editor access, audit history, monitored changes and bounded activity reports. `/pricing` describes Explorer, optional Pro (19 USDC/30 days) and Team (49 USDC/30 days), with pilot inquiries. Crypto checkout is disabled during the pilot. It uses native USDC on Base if explicitly enabled. No app transaction fee or Portova token is introduced.
 
 Cloud commands now consume authorization and mutate records atomically, storing results for safe retries. Owned-project quotas and collaborator permissions are enforced server-side. Public reads are rate-limited. Document scripts use request-specific CSP nonces. Runtime 3002 of the verified testnet is the approved compatibility baseline; unreviewed upgrades pause signing.
 

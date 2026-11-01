@@ -1,7 +1,7 @@
 export const PLANS = {
-  free: { name: "Explorer", monthlyUsd: 0, projects: 3, collaborators: 0, history: false },
-  pro: { name: "Pro", monthlyUsd: 49, projects: 20, collaborators: 0, history: true },
-  team: { name: "Team", monthlyUsd: 149, projects: 100, collaborators: 10, history: true },
+  free: { name: "Explorer", priceUsdc: 0, projects: 3, collaborators: 0, history: false },
+  pro: { name: "Pro", priceUsdc: 19, projects: 20, collaborators: 0, history: true },
+  team: { name: "Team", priceUsdc: 49, projects: 100, collaborators: 10, history: true },
 } as const;
 export type Plan = keyof typeof PLANS;
 export function effectivePlan(plan: string | null | undefined, status: string | null | undefined, periodEnd: string | null | undefined, now = Date.now()): Plan {

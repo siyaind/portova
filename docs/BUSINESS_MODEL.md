@@ -7,8 +7,8 @@ Portova serves small Portaldot project teams that need a maintained launch and o
 | Plan | USDC per prepaid 30-day term | Cloud projects | Collaborators per project | Operations |
 |---|---:|---:|---:|---|
 | Explorer | 0 | 3 | 0 | Native chain tools, local receipts, cloud records, public pages |
-| Pro | 49 | 20 | 0 | Explorer plus indexed related-object events, monitored changes, JSON reports |
-| Team | 149 | 100 | 10 | Pro plus accepted wallet invitations, viewer/editor roles and revocation |
+| Pro | 19 | 20 | 0 | Explorer plus indexed related-object events, monitored changes, JSON reports |
+| Team | 49 | 100 | 10 | Pro plus accepted wallet invitations, viewer/editor roles and revocation |
 
 The cloud API enforces owned-project limits in the database. Existing projects remain accessible after expiry; paid activity and invitations require an active subscription. Shared access is a workspace permission, not chain authority. A transfer offer requires both the current owner's authorization and recipient acceptance; collaborators are cleared on acceptance. Optional crypto invoices use direct USDC on Base with manual renewal. Each verified payment adds a term after existing paid time; no automatic cancellation or debit is needed. Paid access depends on finalized onchain payment verification and time-based database terms, not a success URL or browser flag.
 
