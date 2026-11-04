@@ -11,7 +11,7 @@ import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { planck } from "@/lib/balance";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { readAssetProfile, type AssetProfile } from "@/lib/chain-read";
-import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
+import { errorText, formatUnits, parseDecimalToPlanck, positiveAmountError } from "@/lib/format";
 import { NATIVE_DECIMALS, NATIVE_SYMBOL } from "@/lib/network";
 import { isProceedsAddress } from "@/lib/project";
 import { outcomeWithoutHash, txResultMessage } from "@/lib/tx-result";
@@ -157,6 +157,7 @@ function MintMore({ profile }: { profile: AssetProfile }) {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { signAndSend } = useWalletOperation({ assetId: profile.id, amount, to });
+  useEffect(() => { setMessage(null); }, [amount, to, signer?.address]);
 
   useEffect(() => {
     if (signer && to === "") setTo(signer.address);
@@ -175,7 +176,7 @@ function MintMore({ profile }: { profile: AssetProfile }) {
     }
     const raw = parseDecimalToPlanck(amount, profile.decimals);
     if (!raw || raw <= BigInt(0)) {
-      setMessage("Enter an amount above zero.");
+      setMessage(positiveAmountError(amount, profile.decimals) ?? "Enter an amount above zero.");
       return;
     }
     const destination = to.trim() || signer.address;

@@ -4,6 +4,7 @@ import { plainChainError } from "./chain-error.ts";
 import { collectionIdForHash, reconcileExtrinsic } from "./tx-reconcile.ts";
 import { extrinsicDispatch, outcomeAfterWait } from "./tx-result.ts";
 import { feePaidFor } from "./fee-evidence.ts";
+import { receiptBlockNumber } from "./receipt-location.ts";
 
 export type AssetConstants = {
   assetDeposit: string;
@@ -32,6 +33,7 @@ export type TxUpdate = {
   error?: string;
   collectionId?: string;
   blockHash?: string;
+  blockNumber?: number;
   extrinsicIndex?: number;
   estimatedFee?: string; feeBudget?: string; actualFee?: string; feeTip?: string; preflightBlockHash?: string; runtimeVersion?: string; call?: string;
   notBroadcast?: boolean;
@@ -197,8 +199,12 @@ export async function signAndSend(
       clearInterval(contextTimer);
       if (statusTimer !== null) clearTimeout(statusTimer);
       unsubscribe?.();
-      onUpdate(update);
-      resolve(update);
+      void (async () => {
+        const blockNumber = update.blockHash ? await receiptBlockNumber(api, update.blockHash) : undefined;
+        const located = blockNumber === undefined ? update : { ...update, blockNumber };
+        onUpdate(located);
+        resolve(located);
+      })();
     };
     const armStatusWait = (hash: string) => {
       if (statusTimer !== null) return;

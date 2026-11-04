@@ -8,6 +8,7 @@ import { TX_STORAGE_KEY, normalizeTx, parseTxs, patchTx, importReceipts, mergeRe
 import { withBrowserLock } from "@/lib/browser-lock";
 import { reconcileReceipt } from "@/lib/tx-reconcile";
 import { outcomeAfterWait } from "@/lib/tx-result";
+import { receiptBlockNumber } from "@/lib/receipt-location";
 export { isExtrinsicHash, type TrackedTx } from "@/lib/tx-storage";
 
 export function txStatusLabel(status: string): string {
@@ -32,6 +33,8 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [recovering, setRecovering] = useState(false);
   const recoveryBusy = useRef(false);
+  const locating = useRef(new Set<string>());
+  const locationRetries = useRef(new Map<string, number>());
   const alive = useRef(true);
   const [tick, setTick] = useState(0);
   const persistQueue = useRef(Promise.resolve());
@@ -74,6 +77,20 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
     const added = merged.length - itemsRef.current.length;
     setItems(current => mergeReceipts(current, incoming)); return added;
   }, []);
+
+  useEffect(() => {
+    const api = chain.getApi();
+    if (!ready || chain.status !== "live" || !api) return;
+    const missing = items.filter(row => row.hash && row.blockHash && row.blockNumber === undefined && row.genesisHash === TESTNET_GENESIS &&
+      !locating.current.has(row.id) && Date.now() - (locationRetries.current.get(row.id) ?? 0) > 60000).slice(0, Math.max(0, 3 - locating.current.size));
+    for (const row of missing) {
+      locating.current.add(row.id); locationRetries.current.set(row.id, Date.now());
+      void receiptBlockNumber(api, row.blockHash!).then(height => {
+        const latest = itemsRef.current.find(item => item.id === row.id);
+        if (height !== undefined && alive.current && context.current.chain.getApi() === api && latest && latest.blockHash === row.blockHash && latest.blockNumber === undefined) patch(row.id, { blockNumber: height });
+      }).finally(() => locating.current.delete(row.id));
+    }
+  }, [ready, items, tick, chain.status, chain.getApi, patch]);
 
   useEffect(() => {
     const api = chain.getApi();

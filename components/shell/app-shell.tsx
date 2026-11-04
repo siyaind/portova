@@ -33,9 +33,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", onKey);
+    const onResize = () => { if (window.innerWidth >= 1024) setNavOpen(false); };
+    window.addEventListener("resize", onResize);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { window.cancelAnimationFrame(frame); document.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; if (previousFocus?.isConnected) previousFocus.focus(); };
+    return () => { window.cancelAnimationFrame(frame); document.removeEventListener("keydown", onKey); window.removeEventListener("resize", onResize); document.body.style.overflow = previousOverflow; if (previousFocus?.isConnected) previousFocus.focus(); };
   }, [navOpen]);
 
   if (pathname === "/") {
@@ -60,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarNav />
           <SidebarFooter />
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative z-0 flex min-w-0 flex-1 flex-col" inert={navOpen || undefined}>
           <TopBar onOpenNav={() => setNavOpen(true)} />
           <main id="main" className="app-main mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-7 sm:px-7 lg:px-9 lg:py-9">
             {children}
@@ -71,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       {navOpen ? (
         <div className="fixed inset-0 z-40 flex lg:hidden">
-          <aside ref={navRef} className="app-sidebar mobile-sidebar relative z-10 flex h-full w-[min(100%,18rem)] shrink-0 flex-col" role="dialog" aria-modal="true" aria-label="Navigation">
+          <aside ref={navRef} className="app-sidebar mobile-sidebar relative z-10 flex h-full w-[min(100%,18rem)] shrink-0 flex-col" style={{background: "#15121b"}} role="dialog" aria-modal="true" aria-label="Navigation">
             <div className="flex items-center justify-between pr-3">
               <div className="app-brand-wrap"><Brand compact /></div>
               <button

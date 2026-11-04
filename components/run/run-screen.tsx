@@ -35,6 +35,7 @@ import { depositStillExecutable, swapStillExecutable } from "@/lib/quote-window"
 import { parseRun, rememberEvidence, type RunEvidence, type RunStepName } from "@/lib/testnet-run";
 import { outcomeWithoutHash, txResultMessage, type TxStatus } from "@/lib/tx-result";
 import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
+import { poolCreationCosts } from "@/lib/pool-cost";
 import { useCollectionLaunch } from "@/components/nft/use-collection-launch";
 import { checkLiquidityDeposit } from "@/lib/liquidity-checks";
 
@@ -398,7 +399,7 @@ export function RunScreen() {
     }
     if (findNativePool(chain.pools, assetId)) { setNotice("This pool already exists. Continue with liquidity."); return; }
     const poolConstants = readPoolConstants(api);
-    const setup = poolConstants && /native/i.test(poolConstants.poolSetupFeeAsset) ? planck(poolConstants.poolSetupFee) : null;
+    const setup = poolConstants && /native/i.test(poolConstants.poolSetupFeeAsset) ? poolCreationCosts(poolConstants.poolSetupFee, poolConstants.assetAccountDeposit, poolConstants.lpAccountDeposit, 1)?.total ?? null : null;
     const tx = buildCreatePool(api, left, right);
     if (!findNativePool(chain.pools, assetId) && !assetReady) {
       setNotice("Create the asset before opening a pool for it.");

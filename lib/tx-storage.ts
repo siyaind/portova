@@ -8,6 +8,7 @@ export type TrackedTx = {
   searchCursor?: number; recoveryRequested?: boolean; recoveryMessage?: string;
   estimatedFee?: string; feeBudget?: string; actualFee?: string; feeTip?: string; preflightBlockHash?: string; runtimeVersion?: string; call?: string;
   updatedAt?: number; changeId?: string;
+  importIdentity?: string;
   projectId?: string; projectField?: "assetId" | "collectionId" | "poolLpToken"; objectId?: string;
 };
 const PHASES = new Set<TxStatus>(["signing", "submitted", "included", "finalized", "failed", "ambiguous"]);
@@ -32,6 +33,7 @@ export function normalizeTx(entry: unknown): TrackedTx | null {
     recoveryRequested: record.recoveryRequested === true, recoveryMessage: record.status === "finalized" ? undefined : text(record.recoveryMessage, 400),
     estimatedFee: fee(record.estimatedFee), feeBudget: fee(record.feeBudget), actualFee: fee(record.actualFee), feeTip: fee(record.feeTip),
     updatedAt: number(record.updatedAt), changeId: text(record.changeId, 100),
+    importIdentity: text(record.importIdentity, 240),
     projectId: text(record.projectId, 80), projectField: record.projectField && ["assetId", "collectionId", "poolLpToken"].includes(record.projectField) ? record.projectField : undefined,
     objectId: typeof record.objectId === "string" && /^\d{1,10}$/.test(record.objectId) ? record.objectId : undefined,
     preflightBlockHash: isExtrinsicHash(record.preflightBlockHash) ? record.preflightBlockHash : undefined, runtimeVersion: text(record.runtimeVersion, 100), call: text(record.call, 100),
@@ -96,7 +98,7 @@ export function importReceipts(raw: string, genesisHash: string): TrackedTx[] {
   return data.receipts.flatMap((entry) => {
     const item = normalizeTx(entry);
     if (!item || (item.genesisHash && item.genesisHash !== genesisHash.toLowerCase())) return [];
-    return [{ ...item, id: crypto.randomUUID(), genesisHash: genesisHash.toLowerCase(), status: "ambiguous" as const,
+    return [{ ...item, id: crypto.randomUUID(), importIdentity: item.importIdentity?.startsWith(`${genesisHash.toLowerCase()}:`) ? item.importIdentity : `${genesisHash.toLowerCase()}:${item.id}`, genesisHash: genesisHash.toLowerCase(), status: "ambiguous" as const,
       actualFee: undefined, feeTip: undefined, account: undefined,
       projectId: undefined, projectField: undefined, objectId: undefined, updatedAt: Date.now(), changeId: crypto.randomUUID(),
       error: "Imported record. Its outcome must be verified against the chain.", checkedAt: undefined,
@@ -105,7 +107,9 @@ export function importReceipts(raw: string, genesisHash: string): TrackedTx[] {
 }
 
 export function mergeReceipts(current: TrackedTx[], incoming: TrackedTx[]): TrackedTx[] {
-  const keys = new Set(current.map(receiptKey));
-  return [...current, ...incoming.filter((item) => { const key = receiptKey(item); if (keys.has(key)) return false; keys.add(key); return true; })];
+  const keys = new Set(current.flatMap(receiptKeys));
+  return [...current, ...incoming.filter((item) => { const next = receiptKeys(item); if (next.some(key => keys.has(key))) return false; next.forEach(key => keys.add(key)); return true; })];
 }
-function receiptKey(item: TrackedTx) { return item.hash ? `${item.genesisHash ?? ""}:${item.hash}` : item.id; }
+function receiptKeys(item: TrackedTx) {
+  return item.hash ? [`hash:${item.genesisHash ?? ""}:${item.hash}`] : [`record:${item.genesisHash ?? ""}:${item.id}`, ...(item.importIdentity ? [`record:${item.importIdentity}`] : [])];
+}

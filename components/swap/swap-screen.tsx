@@ -9,7 +9,9 @@ import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { Button, PageIntro, Panel } from "@/components/ui";
 import { useWalletOperation } from "@/components/wallet/use-wallet-operation";
 import { readAssetMinBalance } from "@/lib/chain-read";
-import { errorText, formatUnits, parseDecimalToPlanck } from "@/lib/format";
+import { errorText, formatUnits, parseDecimalToPlanck, positiveAmountError } from "@/lib/format";
+import { TransactionReview } from "@/components/transaction-review";
+import { receiptExplorerUrl } from "@/lib/explorer";
 import { assetRemainder, swapQuoteKey } from "@/lib/liquidity-math";
 import { reviewExtrinsic } from "@/lib/preflight";
 import { QUOTE_EXPIRY_MS, WALLET_MOVE_WARNING, quoteExpired, swapStillExecutable } from "@/lib/quote-window";
@@ -59,11 +61,23 @@ export function SwapScreen() {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  const [costReview, setCostReview] = useState<{ fee: string; budget: string; total: string } | null>(null);
+  const [costReview, setCostReview] = useState<{ fee: string; budget: string; total: string; expires: number; minimum: string } | null>(null);
+  const [receipt, setReceipt] = useState<{ hash: string; block?: number } | null>(null);
   const approval = useRef<((accepted: boolean) => void) | null>(null);
   function closeReview(accepted: boolean) { approval.current?.(accepted); approval.current = null; setCostReview(null); }
   useEffect(() => () => { approval.current?.(false); }, []);
   useEffect(() => { closeReview(false); }, [signer?.address, poolLp, flip, amount, slippage]);
+  useEffect(() => { setMessage(null); }, [amount, flip, poolLp, signer?.address]);
+  useEffect(() => {
+    if (chain.status !== "live") return;
+    let cancelled = false, retry: ReturnType<typeof setTimeout> | undefined;
+    void Promise.allSettled([chain.refreshPools(), chain.refreshAssets()]).then(results => {
+      if (!cancelled && results.some(result => result.status === "rejected")) retry = setTimeout(() => {
+        if (!cancelled) void Promise.allSettled([chain.refreshPools(), chain.refreshAssets()]);
+      }, 1500);
+    });
+    return () => { cancelled = true; clearTimeout(retry); };
+  }, [chain.status, chain.refreshPools, chain.refreshAssets]);
 
 
   const pool = pools?.find((item) => item.lpToken === poolLp) ?? pools?.[0] ?? null;
@@ -72,6 +86,7 @@ export function SwapScreen() {
   const assetOut = pool ? (flip ? pool.asset1 : pool.asset2) : null;
   const decimalsIn = assetIn ? assetDecimals(assetIn, maps.decimals) : null;
   const amountIn = decimalsIn === null ? null : parseDecimalToPlanck(amount, decimalsIn);
+  const amountError = amount.trim() && decimalsIn !== null ? positiveAmountError(amount, decimalsIn) : null;
   const usable = pool ? reservesUsable(pool) : false;
   const quoteKey =
     pool && amountIn && amountIn > BigInt(0)
@@ -167,6 +182,7 @@ export function SwapScreen() {
 
   async function onSwap() {
     setMessage(null);
+    setReceipt(null);
     if (!signer) {
       await wallet.connect();
       return;
@@ -233,9 +249,9 @@ export function SwapScreen() {
       const reviewExpires = Date.now() + 30000;
       const accepted = await new Promise<boolean>(resolve => {
         approval.current = resolve;
-        setCostReview({ fee: review.estimatedFee.toString(), budget: review.fee.toString(), total: review.nativeNeed.toString() });
+        setCostReview({ fee: review.estimatedFee.toString(), budget: review.fee.toString(), total: review.nativeNeed.toString(), expires: reviewExpires, minimum: freshMin.toString() });
       });
-      if (!accepted) { setMessage("Review cancelled. No wallet request was opened."); return; }
+      if (!accepted) { setMessage(Date.now() >= reviewExpires ? "The cost review expired. Review again. No wallet request was opened." : "Review cancelled. No wallet request was opened."); return; }
       if (!operationCurrent() || Date.now() > reviewExpires) { setMessage("The review expired or inputs changed. Review again."); return; }
       const freshFee = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n]);
       if (!freshFee.ok || freshFee.nativeNeed > review.nativeNeed) { setMessage("The balance or fee changed. Review again."); return; }
@@ -257,6 +273,7 @@ export function SwapScreen() {
       }, undefined, quoteStillCovers);
       if (result.status === "finalized") void chain.refreshPools().catch(() => undefined);
       setMessage(txResultMessage(result.status, result.error));
+      if (result.hash) setReceipt({hash: result.hash, block: result.blockNumber});
     } catch (cause) {
       const text = errorText(cause);
       setMessage(text);
@@ -269,7 +286,7 @@ export function SwapScreen() {
 
   return (
     <div className="space-y-6">
-      {costReview && <Panel className="space-y-3 border-violet p-5"><h2 className="font-semibold">Review swap before opening your wallet</h2><p className="break-all text-xs">Recipient: {signer?.address}</p><p className="text-sm">Input: {amount} {assetIn?.kind === "asset" ? `asset #${assetIn.id}` : "tPOT"} · Output: {assetOut?.kind === "asset" ? `asset #${assetOut.id}` : "tPOT"}</p><p className="text-sm">Minimum received: {minimum !== null && assetOut && assetDecimals(assetOut, maps.decimals) !== null ? formatUnits(minimum.toString(), assetDecimals(assetOut, maps.decimals)!) : "Unavailable"}</p><p className="text-sm">Estimated network fee: {formatUnits(costReview.fee, 14)} tPOT · Fee budget with reserve: {formatUnits(costReview.budget, 14)} tPOT</p><p className="text-xs text-muted">Total native requirement: {formatUnits(costReview.total, 14)} tPOT. Pool fees are included in the output quote. This review expires after 30 seconds.</p><div className="flex gap-3"><Button onClick={() => closeReview(true)}>Continue to wallet</Button><Button onClick={() => closeReview(false)}>Cancel review</Button></div></Panel>}
+      {costReview && <TransactionReview title="Review swap before opening your wallet" expiresAt={costReview.expires} onConfirm={() => closeReview(true)} onCancel={() => closeReview(false)}><p className="break-all text-xs">Recipient: {signer?.address}</p><p className="text-sm">Input: {amount} {assetIn?.kind === "asset" ? `asset #${assetIn.id}` : "tPOT"} · Output: {assetOut?.kind === "asset" ? `asset #${assetOut.id}` : "tPOT"}</p><p className="text-sm">Minimum received: {assetOut && assetDecimals(assetOut, maps.decimals) !== null ? formatUnits(costReview.minimum, assetDecimals(assetOut, maps.decimals)!) : "Unavailable"}</p><p className="text-sm">Estimated network fee: {formatUnits(costReview.fee, 14)} tPOT · Fee budget with reserve: {formatUnits(costReview.budget, 14)} tPOT</p><p className="text-xs text-muted">Total native requirement: {formatUnits(costReview.total, 14)} tPOT. Pool fees are included in the output quote.</p></TransactionReview>}
       <PageIntro
         eyebrow="Swap"
         title="Find your flow."
@@ -280,7 +297,9 @@ export function SwapScreen() {
           <div className="swap-terminal-heading"><span><ArrowDownUp size={16} /> Swap assets</span><span className="swap-testnet-tag">V3 TESTNET</span></div>
           {pools === null ? (
             <p className="text-sm text-muted">
-              {chain.status === "connecting" ? "Reading pools from the testnet." : "The pool list is unavailable."}
+              {chain.status === "connecting" || chain.discovery.pools.loading ? "Reading pools from the testnet…" : "The pool list could not be loaded. Retry discovery."}
+              {chain.discovery.pools.error && <span className="mt-2 block text-xs">{chain.discovery.pools.error}</span>}
+              <Button className="mt-3" disabled={chain.status !== "live" || chain.discovery.pools.loading} onClick={() => void Promise.allSettled([chain.refreshPools(), chain.refreshAssets()])}>Retry pool discovery</Button>
             </p>
           ) : pools.length === 0 ? (
             <p className="text-sm leading-6 text-muted">
@@ -305,9 +324,11 @@ export function SwapScreen() {
                   ))}
                 </select>
               </label>
+              <Button disabled={chain.status !== "live" || chain.discovery.pools.loading} onClick={() => void Promise.allSettled([chain.refreshPools(), chain.refreshAssets()])}>{chain.discovery.pools.loading ? "Refreshing pools…" : "Refresh pools"}</Button>
               <div className="swap-amount-box"><div className="swap-amount-label"><span>You pay</span><span className="swap-asset-badge"><Coins size={13} />{assetIn ? assetLabel(assetIn, maps.symbols) : "—"}</span></div>
               <input
                 aria-label="Amount to swap"
+                aria-invalid={!!amountError}
                 className="swap-amount-input"
                 inputMode="decimal"
                 value={amount}
@@ -315,6 +336,7 @@ export function SwapScreen() {
                 disabled={!usable}
                 onChange={(event) => setAmount(event.target.value)}
               />
+              {amountError && <p role="status" className="mt-2 text-xs text-warn">{amountError}</p>}
               <div className="swap-amount-footer"><span>Receive {assetOut ? assetLabel(assetOut, maps.symbols) : "—"}</span><button type="button" aria-label="Switch swap direction" onClick={() => setFlip((value) => !value)}><ArrowDownUp size={13} /> Switch</button></div></div>
               <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-muted">Slippage tolerance</span><div className="flex gap-1.5">
                 {["0.1", "0.5", "1"].map((item) => (
@@ -347,7 +369,7 @@ export function SwapScreen() {
                 onClick={() => void onSwap()}
                 className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {busy ? "Waiting for the wallet…" : signer ? "Swap" : "Connect Substrate wallet"}
+                {busy ? costReview ? "Review open…" : "Waiting for wallet and chain…" : signer ? "Swap" : "Connect Substrate wallet"}
               </button>
               <p className="text-xs leading-5 text-faint">
                 {expiredKey === quoteKey && quoteKey
@@ -362,6 +384,7 @@ export function SwapScreen() {
               ) : null}
             </>
           )}
+          {receipt && <div className="space-y-2 text-xs"><p className="break-all font-mono">Transaction {receipt.hash}</p><p>{receipt.block === undefined ? "Block lookup unavailable; inspect Activity." : `Block ${receipt.block}`}</p><a className="text-violet underline" href={receiptExplorerUrl(receipt.hash) ?? "#"} target="_blank" rel="noreferrer">Inspect transaction ↗</a></div>}
           {wallet.error ? <p className="text-sm text-warn">{wallet.error}</p> : null}
           {message ? <p className="text-sm text-warn">{message}</p> : null}
         </Panel>

@@ -28,6 +28,7 @@ export function PilotAccess() {
   }, [wallet.selected?.address]);
   async function request(action: "pilot" | "list") {
     if (!wallet.selected) {
+      setNotice("Connect your Substrate wallet and select an account, then check or activate your access.");
       await wallet.connect();
       return;
     }

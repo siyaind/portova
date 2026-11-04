@@ -62,6 +62,7 @@ export function CreateTokenForm({ projectId, initialName = "" }: { projectId?: s
     if (typeof draft.assetId === "string") { setAssetId(draft.assetId); setIdTouched(true); }
   });
 
+  useEffect(() => { setFormError(null); setAttempted(false); }, [name, symbol, decimals, supply, minBalance, beneficiary, assetId, signer?.address]);
   useEffect(() => {
     if (!idTouched && chain.assets) {
       const ids = chain.assets

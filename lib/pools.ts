@@ -28,6 +28,8 @@ export type PoolConstants = {
   withdrawalFee: string;
   mintMinLiquidity: string;
   existentialDeposit: string | null;
+  assetAccountDeposit: string | null;
+  lpAccountDeposit: string | null;
 };
 
 export function encodeAsset(asset: AssetRef): { Native: null } | { WithId: number } {
@@ -80,6 +82,8 @@ export function readPoolConstants(api: ApiPromise): PoolConstants | null {
     withdrawalFee: String(consts.liquidityWithdrawalFee?.toHuman?.() ?? "Unavailable"),
     mintMinLiquidity,
     existentialDeposit: digits(balances.existentialDeposit),
+    assetAccountDeposit: digits(api.consts.assets?.assetAccountDeposit),
+    lpAccountDeposit: digits(api.consts.poolAssets?.assetAccountDeposit),
   };
 }
 

@@ -44,6 +44,14 @@ export function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
+export function positiveAmountError(value: string, decimals: number): string | null {
+  const text = value.trim();
+  if (!text || /^-/.test(text) || /^0+(\.0+)?$/.test(text)) return "Enter an amount above zero.";
+  if (!/^\d+(\.\d+)?$/.test(text)) return "Enter a valid decimal amount.";
+  if ((text.split(".")[1]?.length ?? 0) > decimals) return `Use at most ${decimals} decimal places.`;
+  return parseDecimalToPlanck(text, decimals) === null ? "The amount is too large." : null;
+}
+
 export function errorText(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   return "The request failed.";

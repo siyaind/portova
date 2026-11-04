@@ -47,3 +47,12 @@ test("another extrinsic's success cannot confirm this transaction", async () => 
   const tx: Tx = { signAndSend: async (_a, _o, callback) => { callback(result(1, 0)); return () => {}; } };
   assert.equal((await signAndSend(api, tx, "alice", signer, () => {})).status, "ambiguous");
 });
+
+test("finalized wallet receipts resolve their inclusion height from the receipt hash, not the latest head", async () => {
+  const queries: string[] = [];
+  const locatedApi = { rpc: { chain: { getHeader: async (requested: string) => { queries.push(requested); return {number:{toString:()=>"325751"}}; } } } } as unknown as ApiPromise;
+  const tx: Tx = { signAndSend: async (_a,_o,callback) => { callback(result()); return () => {}; } };
+  const receipt = await signAndSend(locatedApi, tx, "alice", signer, () => {});
+  assert.equal(receipt.status, "finalized"); assert.equal(receipt.blockNumber, 325751);
+  assert.deepEqual(queries, [blockHash]);
+});

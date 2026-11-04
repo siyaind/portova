@@ -37,6 +37,8 @@ import { useProject } from "@/components/project/project-provider";
 import { acquireLease } from "@/lib/browser-lock";
 import { readPools } from "@/lib/pools";
 import { checkLiquidityDeposit } from "@/lib/liquidity-checks";
+import { poolCreationCosts } from "@/lib/pool-cost";
+import { TransactionReview } from "@/components/transaction-review";
 
 const FIELD =
   "h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-ink";
@@ -70,7 +72,8 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
   useEffect(() => { approval.current?.(false); approval.current = null; setReviewPrompt(null); }, [signer?.address, amount1, amount2, lpAmount, slippage, left, right, poolLp]);
 
   const relevantPools = assetId ? chain.pools?.filter(item => [item.asset1, item.asset2].some(side => side.kind === "native") && [item.asset1, item.asset2].some(side => side.kind === "asset" && side.id === assetId)) : chain.pools;
-  const pool = relevantPools?.find((item) => item.lpToken === poolLp) ?? relevantPools?.[0] ?? null;
+  const pool = poolLp ? relevantPools?.find((item) => item.lpToken === poolLp) ?? null : relevantPools?.[0] ?? null;
+  const creationCosts = constants ? poolCreationCosts(constants.poolSetupFee, constants.assetAccountDeposit, constants.lpAccountDeposit, Number(left.kind === "asset") + Number(right.kind === "asset")) : null;
   const pairExists = chain.pools?.some(item => (sameAsset(item.asset1, left) && sameAsset(item.asset2, right)) || (sameAsset(item.asset1, right) && sameAsset(item.asset2, left))) ?? false;
   const { signAndSend } = useWalletOperation({ left, right, pool: pool?.lpToken, amount1, amount2, lpAmount, slippage, projectId, projectRevision: projectId ? project.project?.revision : null });
 
@@ -174,7 +177,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
         approval.current = resolve;
         setReviewPrompt({ label: input.label, fee: review.estimatedFee.toString(), reserve: review.fee.toString(), total: review.nativeNeed.toString(), expires });
       });
-      if (!accepted) { report("Review cancelled. No wallet request was opened."); return; }
+      if (!accepted) { report(Date.now() >= expires ? "The cost review expired. No wallet request was opened. Review again." : "Review cancelled. No wallet request was opened."); return; }
       if (Date.now() > expires) throw Error("The cost review expired. Review the operation again.");
       const fresh = await reviewExtrinsic(api, input.tx, signer.address, input.nativeDebits);
       if (!fresh.ok || fresh.nativeNeed > review.nativeNeed) throw Error("The balance or fee changed. Review the updated operation again.");
@@ -189,7 +192,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
         undefined,
         input.stillCurrent,
       );
-      report(result.hash ? `${txResultMessage(result.status, result.error)} ${result.hash}` : txResultMessage(result.status, result.error));
+      report(result.hash ? `${txResultMessage(result.status, result.error)} ${result.hash}${result.blockNumber === undefined ? "" : ` · Block ${result.blockNumber}`}` : txResultMessage(result.status, result.error));
       if (projectId && result.status === "finalized" && input.createdPair) {
         const pair = input.createdPair;
         const created = (await readPools(api)).find(row => (sameAsset(row.asset1, pair.first) && sameAsset(row.asset2, pair.second)) || (sameAsset(row.asset1, pair.second) && sameAsset(row.asset2, pair.first)));
@@ -218,8 +221,9 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
         body="Create a pool, manage your deposits, and withdraw liquidity from your wallet. Every action is a separate signature, with reserves and fees read from the network."
       />
       {projectId && message && <p role="status" className="text-sm leading-6 text-warn">{message}</p>}
-      {reviewPrompt && <Panel className="space-y-3 border-violet/50 p-5"><h2 className="text-lg font-semibold">Review {reviewPrompt.label.toLowerCase()}</h2><p className="text-sm text-muted">{reviewPrompt.label === "Add liquidity" ? `Deposit ${amount1} ${pool ? assetLabel(pool.asset1, maps.symbols) : ""} + ${amount2} ${pool ? assetLabel(pool.asset2, maps.symbols) : ""}. A missing LP account is prepared in the same transaction; its deposit is reserved, not spent as a fee.` : reviewPrompt.label === "Remove liquidity" ? `Burn ${lpAmount} LP units. Max withdraws your balance; the pool's permanently locked minimum liquidity remains.` : `Create ${assetLabel(left, maps.symbols)} / ${assetLabel(right, maps.symbols)}. Pool setup is a separate operation from adding liquidity.`}</p><p className="text-sm">Estimated network fee: {formatUnits(reviewPrompt.fee, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Fee budget: {formatUnits(reviewPrompt.reserve, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Total native balance needed, including deposits/transfers: {formatUnits(reviewPrompt.total, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-xs text-faint">This review expires after 60 seconds. Your wallet approval is still required.</p><div className="flex gap-3"><button className="min-h-11 rounded-lg bg-violet px-4 text-violet-ink" onClick={() => closeReview(true)}>Continue to wallet</button><button className="min-h-11 rounded-lg border border-line px-4" onClick={() => closeReview(false)}>Cancel</button></div></Panel>}
+      {reviewPrompt && <TransactionReview title={`Review ${reviewPrompt.label.toLowerCase()}`} expiresAt={reviewPrompt.expires} onConfirm={() => closeReview(true)} onCancel={() => closeReview(false)}><p className="text-sm text-muted">{reviewPrompt.label === "Add liquidity" ? `Deposit ${amount1} ${pool ? assetLabel(pool.asset1, maps.symbols) : ""} + ${amount2} ${pool ? assetLabel(pool.asset2, maps.symbols) : ""}. A missing LP account is prepared in the same transaction; its deposit is reserved, not spent as a fee.` : reviewPrompt.label === "Remove liquidity" ? `Burn ${lpAmount} LP units. Max withdraws your balance; the pool's permanently locked minimum liquidity remains.` : `Create ${assetLabel(left, maps.symbols)} / ${assetLabel(right, maps.symbols)}. Setup fee ${creationCosts ? formatUnits(creationCosts.setup.toString(), 14) : "unavailable"} tPOT; pool account deposits reserved ${creationCosts ? formatUnits(creationCosts.reserved.toString(), 14) : "unavailable"} tPOT. Adding liquidity is separate.`}</p><p className="text-sm">Estimated network fee: {formatUnits(reviewPrompt.fee, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Fee budget: {formatUnits(reviewPrompt.reserve, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Total native balance needed, including deposits/transfers: {formatUnits(reviewPrompt.total, NATIVE_DECIMALS, 10)} tPOT</p></TransactionReview>}
       <Panel className="p-4">
+        {poolLp && !pool && <p role="status" className="mb-3 text-sm text-warn">LP #{poolLp} is not in the loaded pool snapshot. Refresh discovery to load it; no different pool has been selected.</p>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Stored pools</h2>
           <StatusPill tone={chain.status === "connecting" || chain.pools === null ? "warn" : chain.poolCount === 0 ? "muted" : "ok"}>
@@ -262,6 +266,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
           <p className="text-xs leading-5 text-faint">
             Setup fee {constants ? `${formatUnits(constants.poolSetupFee, NATIVE_DECIMALS)} ${NATIVE_SYMBOL}` : chain.status === "connecting" ? "reading" : "unavailable"}, paid in {constants?.poolSetupFeeAsset ?? "the native token"}. Swap fee {constants?.lpFee ?? (chain.status === "connecting" ? "reading" : "unavailable")}. This call does not add liquidity.
           </p>
+          <p className="text-xs leading-6 text-muted">Pool account deposits reserved: {creationCosts ? `${formatUnits(creationCosts.reserved.toString(), 14)} tPOT` : "Unavailable"}. Total before network fee: {creationCosts ? `${formatUnits(creationCosts.total.toString(), 14)} tPOT` : "Unavailable"}. Reserved deposits reduce free balance; they are separate from the setup fee.</p>
           <fieldset disabled={Boolean(projectId)} className="space-y-4">
           <AssetPicker label="First asset" value={left} assets={chain.assets} onChange={setLeft} />
           <AssetPicker label="Second asset" value={right} assets={chain.assets} onChange={setRight} />
@@ -274,7 +279,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
             onClick={() => void submitCreate()}
             className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pairExists ? "Pool already exists" : busy === "Create pool" ? "Waiting for the wallet…" : signer ? "Create pool" : "Connect Substrate wallet"}
+            {pairExists ? "Pool already exists" : busy === "Create pool" ? reviewPrompt ? "Review open…" : "Waiting for wallet and chain…" : signer ? "Create pool" : "Connect Substrate wallet"}
           </button>
         </Panel>
 
@@ -303,7 +308,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
                 onClick={() => void submitAdd()}
                 className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {busy === "Add liquidity" ? "Waiting for the wallet…" : signer ? "Add liquidity" : "Connect Substrate wallet"}
+                {busy === "Add liquidity" ? reviewPrompt ? "Review open…" : "Waiting for wallet and chain…" : signer ? "Add liquidity" : "Connect Substrate wallet"}
               </button>
               <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
               {addMessage ? <p className="text-sm leading-6 text-warn">{addMessage}</p> : null}
@@ -352,7 +357,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
               onClick={() => void submitRemove()}
               className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-50"
             >
-              {busy === "Remove liquidity" ? "Waiting for the wallet…" : "Remove liquidity"}
+              {busy === "Remove liquidity" ? reviewPrompt ? "Review open…" : "Waiting for wallet and chain…" : "Remove liquidity"}
             </button>
             <p className="text-xs leading-5 text-faint">{WALLET_MOVE_WARNING}</p>
           </>
@@ -373,14 +378,14 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
     setBusy("prepare");
     try {
       const api = chain.getApi();
-      if (!api || !constants || !/native/i.test(constants.poolSetupFeeAsset)) {
+      if (!api || !constants || !creationCosts || !/native/i.test(constants.poolSetupFeeAsset)) {
         setMessage("The pool setup fee could not be read as a native deposit, so the wallet was not opened.");
         return;
       }
       await sign({
         label: "Create pool",
         tx: buildCreatePool(api, left, right),
-        nativeDebits: [planck(constants.poolSetupFee)],
+        nativeDebits: [creationCosts.total],
         createdPair: { first: left, second: right },
       });
     } finally {

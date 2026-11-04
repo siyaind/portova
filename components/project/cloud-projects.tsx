@@ -67,6 +67,7 @@ export function CloudProjects({
   const saveRevision = publicationSaveRevision(publication.draft, cloud);
   async function execute(payload: ProjectRequest) {
     if (!wallet.selected) {
+      setMessage("Connect your Substrate wallet and select an account, then choose the operation again.");
       await wallet.connect();
       return;
     }
@@ -278,7 +279,7 @@ export function CloudProjects({
               disabled={busy || !available}
               onClick={() => void execute({ action: "list" })}
             >
-              Load my cloud projects
+              {wallet.selected ? "Load my cloud projects" : "Connect wallet to load cloud projects"}
           </Button>
         </div>
         {cloud && (

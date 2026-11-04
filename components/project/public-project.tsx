@@ -11,29 +11,33 @@ import { Button, Panel, StatusPill } from "@/components/ui";
 import { LaunchHealth } from "@/components/studio/launch-health";
 export function PublicProject({ id }: { id: string }) {
   const [entry, setEntry] = useState<DirectoryEntry | null>(null);
+  const [retry, setRetry] = useState(0);
   const [project, setProject] = useState<CloudProject | null>(null),
     [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const abort = new AbortController();
+    setError(null); setProject(null); setEntry(null);
     void fetch(`/api/projects/${encodeURIComponent(id)}`, {
       cache: "no-store",
-      signal: abort.signal,
+      signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15000)]),
     })
       .then(async (r) => {
         const data = await r.json();
-        if (!r.ok) throw Error(data.error);
+        if (!r.ok) throw Object.assign(Error(data.error ?? "This project could not be loaded."), { publicFailure: true });
+        if (abort.signal.aborted) return;
         setProject(data.project);
         setEntry(data.directory);
       })
       .catch((e) => {
-        if (!abort.signal.aborted) setError(e.message);
+        if (!abort.signal.aborted) setError(e.name === "TimeoutError" ? "Loading timed out. Try again." : e.publicFailure ? e.message : "Could not connect to project storage. Check your connection and try again.");
       });
     return () => abort.abort();
-  }, [id]);
+  }, [id, retry]);
   if (!project)
     return (
       <Panel className="p-8">
         <h1 className="text-xl font-semibold">{error ?? "Loading project…"}</h1>
+        {error && <Button className="mt-4 mr-4" onClick={() => setRetry(x => x + 1)}>Retry loading project</Button>}
         <Link href="/launch" className="mt-4 inline-block text-violet">
           Create your own launch ↗
         </Link>
@@ -103,6 +107,7 @@ export function PublicProject({ id }: { id: string }) {
             </p>
           </div>
         )}
+        {!entry?.evidence && <p className="text-xs leading-6 text-muted">No chain role evidence is recorded for this revision. The publisher can refresh it in their workspace. Profile edits require a new check.</p>}
         {safeWebsite(project.project.profile?.website) && (
           <a
             className="inline-block text-sm text-violet"
@@ -136,10 +141,10 @@ export function PublicProject({ id }: { id: string }) {
           )}
           {project.project.poolLpToken && (
             <Link
-              href="/liquidity"
+              href={`/liquidity?pool=${encodeURIComponent(project.project.poolLpToken)}`}
               className="rounded-xl border border-line px-4 py-3 text-sm"
             >
-              Inspect liquidity
+              Inspect liquidity · LP #{project.project.poolLpToken}
             </Link>
           )}
           <Button

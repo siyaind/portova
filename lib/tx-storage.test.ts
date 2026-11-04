@@ -24,6 +24,17 @@ test("imported success claims are reverified and a different network is refused"
   assert.equal(parseTxs(JSON.stringify([{ ...row, hash: "javascript:bad" }])).length, 0);
 });
 
+test("repeated imports are idempotent for cancelled attempts without a hash, including re-export", () => {
+  const cancelled: TrackedTx = { id: "cancelled-attempt", label: "Swap", status: "ambiguous", error: "Cancelled", createdAt: 1234, genesisHash: genesis };
+  const backup = exportReceipts([cancelled], genesis);
+  const first = importReceipts(backup, genesis);
+  assert.equal(mergeReceipts([cancelled], first).length, 1);
+  assert.equal(mergeReceipts(first, importReceipts(backup, genesis)).length, 1);
+  assert.equal(mergeReceipts(first, importReceipts(exportReceipts(first, genesis), genesis)).length, 1);
+  assert.equal(first[0].status, "ambiguous");
+  assert.equal(mergeReceipts(first, importReceipts(exportReceipts([{...cancelled, id:"different-attempt"}], genesis), genesis)).length, 2);
+});
+
 test("explorer links validate the full receipt or block identifier", () => {
   assert.equal(receiptExplorerUrl("javascript:bad"), null);
   assert.match(receiptExplorerUrl(hash)!, /#\/extrinsics\/0xab/);

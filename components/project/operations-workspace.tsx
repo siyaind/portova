@@ -57,6 +57,7 @@ export function OperationsWorkspace({
   const [account, setAccount] = useState(""),
     [role, setRole] = useState<"viewer" | "editor">("viewer"),
     [confirm, setConfirm] = useState(false);
+  const [supportNotice, setSupportNotice] = useState("");
   const [category, setCategory] = useState<
       "pilot" | "support" | "abuse" | "deletion"
     >("pilot"),
@@ -103,9 +104,11 @@ export function OperationsWorkspace({
     setSelected("");
     setPlan("free");
     setMessage("");
+    setSupportNotice("");
   }, [wallet.selected?.address]);
   async function execute(payload: ProjectRequest) {
     if (!wallet.selected) {
+      setMessage("Connect your Substrate wallet and select an account, then choose the operation again.");
       await wallet.connect();
       return;
     }
@@ -113,6 +116,7 @@ export function OperationsWorkspace({
     lock.current = true;
     setBusy(true);
     setMessage("");
+    if (payload.action === "support") setSupportNotice("Waiting for your storage message…");
     const signer = wallet.selected,
       version = wallet.getVersion(),
       origin = context.current;
@@ -142,11 +146,14 @@ export function OperationsWorkspace({
         );
       } else {
         setMessage(
-          result.message ??
-            (result.ticket
+          result.ticket
               ? `Request ${result.ticket} saved.`
-              : "Request completed. Refresh your workspace to see the result."),
+              : result.message ?? "Request completed. Refresh your workspace to see the result.",
         );
+        if (result.ticket) {
+          setTickets(old => [{id: result.ticket, status: "open", response: null, category}, ...old]);
+          setSupportNotice(`Request ${result.ticket} saved. Load workspaces later to read updates.`);
+        }
         if (
           ["delete", "accept-transfer", "revoke", "invite"].includes(
             payload.action,
@@ -155,6 +162,8 @@ export function OperationsWorkspace({
           setDashboard(null);
       }
     } catch (cause) {
+      if ((cause as { status?: number }).status === 403) setDashboard(null);
+      if (payload.action === "support") setSupportNotice(cause instanceof Error ? cause.message : "Request failed.");
       if (mounted.current)
         setMessage(cause instanceof Error ? cause.message : "Request failed.");
     } finally {
@@ -237,7 +246,7 @@ export function OperationsWorkspace({
             disabled={!ready || busy}
             onClick={() => void execute({ action: "list" })}
           >
-            {busy ? "Waiting for your signed request…" : "Load my workspaces"}
+            {busy ? "Waiting for your signed request…" : wallet.selected ? "Load my workspaces" : "Connect wallet to load workspaces"}
           </Button>
           <Link className="text-sm text-violet" href="/studio">
             Edit linked project details ↗
@@ -590,6 +599,7 @@ export function OperationsWorkspace({
                 {ticket.response && ` · ${ticket.response}`}
               </p>
             ))}
+            {supportNotice && <p role="status" className="break-all text-sm leading-6 text-muted">{supportNotice}</p>}
           </Panel>
         </div>
       </details>

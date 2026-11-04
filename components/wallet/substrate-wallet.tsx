@@ -41,9 +41,11 @@ export function SubstrateWalletProvider({
   const [error, setError] = useState<string | null>(null);
   const enableTask = useRef<Promise<unknown> | null>(null);
   const generation = useRef(0);
+  const connectionWanted = useRef(false);
   const selectedRef = useRef(selected); selectedRef.current = selected;
 
   const connect = useCallback(async () => {
+    connectionWanted.current = true;
     if (enableTask.current) {
       setStatus("error");
       setError("A wallet request is still open. Close it in the extension, then choose Connect again.");
@@ -130,13 +132,14 @@ export function SubstrateWalletProvider({
   );
 
   const disconnect = useCallback(() => {
+    connectionWanted.current = false;
     generation.current += 1;
     setAccounts([]);
     setSelected(null);
     setError(null);
     setStatus("idle");
     try {
-      window.sessionStorage.removeItem("portova.substrate.connected");
+      window.sessionStorage.setItem("portova.substrate.connected", "0");
       window.sessionStorage.removeItem("portova.substrate.selected");
     } catch { /* Disconnect still applies in memory. */ }
   }, []);
@@ -152,7 +155,7 @@ export function SubstrateWalletProvider({
     let unsubscribe: (() => void) | undefined;
     void import("@polkadot/extension-dapp").then(async ({ web3AccountsSubscribe }) => {
       const stop = await web3AccountsSubscribe((injected) => {
-        if (cancelled) return;
+        if (cancelled || !connectionWanted.current) return;
         const next = injected.map((account) => ({ address: account.address, name: account.meta.name ?? "Account", source: account.meta.source ?? "extension" }));
         setAccounts(next);
         const previous = selectedRef.current;

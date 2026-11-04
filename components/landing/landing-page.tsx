@@ -116,6 +116,8 @@ export function LandingPage() {
             <Link href="/explore" onClick={() => setMenuOpen(false)}>
               Discover projects <ArrowUpRight size={16} />
             </Link>
+            <Link href="/pricing" onClick={() => setMenuOpen(false)}>Plans & pilot <ArrowUpRight size={16} /></Link>
+            <Link href="/bridge" onClick={() => setMenuOpen(false)}>External bridge <ArrowUpRight size={16} /></Link>
           </nav>
         )}
       </header>

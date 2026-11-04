@@ -25,13 +25,14 @@ const ChainContext = createContext<ChainValue | null>(null);
 export function ChainProvider({ children }: { children: React.ReactNode }) {
   const apiRef = useRef<ApiPromise | null>(null), alive = useRef(true);
   const scans = useRef<Record<Kind, number>>({ assets: 0, collections: 0, pools: 0 });
+  const scanTasks = useRef<Partial<Record<Kind, Promise<void>>>>({});
   const [status, setStatus] = useState<ChainStatus>("connecting"), [error, setError] = useState<string | null>(null);
   const [chainName, setChainName] = useState<string | null>(null), [blockNumber, setBlockNumber] = useState<string | null>(null);
   const [assets, setAssets] = useState<AssetRow[] | null>(null), [collections, setCollections] = useState<CollectionSummary[] | null>(null), [pools, setPools] = useState<PoolView[] | null>(null);
   const [discovery, setDiscovery] = useState<Record<Kind, DiscoveryState>>({ assets: emptyDiscovery(), collections: emptyDiscovery(), pools: emptyDiscovery() });
   const latest = useRef({ assets, discovery }); latest.current = { assets, discovery };
 
-  const scan = useCallback(async (kind: Kind) => {
+  const scanOnce = useCallback(async (kind: Kind) => {
     const api = apiRef.current; if (!api?.isConnected) return;
     const ticket = ++scans.current[kind];
     const current = () => alive.current && apiRef.current === api && api.isConnected && scans.current[kind] === ticket;
@@ -70,6 +71,14 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
       throw cause;
     }
   }, []);
+  const scan = useCallback((kind: Kind) => {
+    const active = scanTasks.current[kind];
+    if (active) return active;
+    const task = scanOnce(kind);
+    scanTasks.current[kind] = task;
+    void task.finally(() => { if (scanTasks.current[kind] === task) delete scanTasks.current[kind]; }).catch(() => undefined);
+    return task;
+  }, [scanOnce]);
   const refreshAssets = useCallback(() => scan("assets"), [scan]);
   const refreshCollections = useCallback(() => scan("collections"), [scan]);
   const refreshPools = useCallback(() => scan("pools"), [scan]);
@@ -104,6 +113,7 @@ export function ChainProvider({ children }: { children: React.ReactNode }) {
         apiRef.current = api;
         api.on("disconnected", () => {
           if (cancelled) return; generation++;
+          scanTasks.current = {};
           for (const kind of ["assets", "collections", "pools"] as const) scans.current[kind]++;
           setStatus("unavailable"); setError("The testnet connection dropped. The client will try to reconnect.");
           setDiscovery(old => Object.fromEntries(Object.entries(old).map(([kind, state]) => [kind, { ...state, loading: false, complete: false, error: "Connection dropped; refresh after reconnect." }])) as Record<Kind, DiscoveryState>);

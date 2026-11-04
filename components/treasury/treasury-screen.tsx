@@ -38,7 +38,12 @@ export function TreasuryScreen() {
   const latest = useRef({ context, destination, amount }); latest.current = { context, destination, amount };
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const draftKey = [context.account, context.source, context.proceeds, context.genesisHash, context.live, destination, amount].join("|");
-  useEffect(() => { setReview(null); setMessage(null); }, [draftKey]);
+  useEffect(() => { setReview(null); setMessage(review ? "Withdrawal details changed. Review the updated details before signing." : null); }, [draftKey]);
+  useEffect(() => {
+    if (!review || phase !== "idle") return;
+    const timer = window.setTimeout(() => { setReview(null); setMessage("This withdrawal review expired. Review again before signing."); }, Math.max(0, review.createdAt + 60000 - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [review, phase]);
 
   function isCurrent(request: WithdrawalRequest) {
     const now = latest.current;
