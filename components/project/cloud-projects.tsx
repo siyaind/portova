@@ -7,6 +7,8 @@ import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { Button, Panel } from "@/components/ui";
 import { type CloudProject, type ProjectRequest } from "@/lib/cloud-project";
 import { sameAccount } from "@/lib/withdrawal";
+import { usePublicationDraft } from "@/components/project/use-publication-draft";
+import { publicationSaveRevision } from "@/lib/publication-draft";
 import {
   PROJECT_CATEGORIES,
   directoryReady,
@@ -21,20 +23,16 @@ export function CloudProjects({
   const [available, setAvailable] = useState<boolean | null>(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState<string | null>(null);
-  const [rows, setRows] = useState<CloudProject[]>([]),
-    [description, setDescription] = useState(""),
-    [published, setPublished] = useState(false);
-  const [profile, setProfile] = useState<ProjectProfile>({
-    category: "Other",
-    website: "",
-    example: false,
-  });
+  const [rows, setRows] = useState<CloudProject[]>([]);
+  const publication = usePublicationDraft(wallet.selected?.address, stored.project);
+  const { description, published, profile } = publication.draft;
   const current = useRef({
     wallet: wallet.selected,
     draft: JSON.stringify(stored.project),
     description,
     published,
     profile: JSON.stringify(profile),
+    publication: JSON.stringify(publication.draft),
     alive: true,
   });
   current.current = {
@@ -44,11 +42,9 @@ export function CloudProjects({
     description,
     published,
     profile: JSON.stringify(profile),
+    publication: JSON.stringify(publication.draft),
   };
   const lock = useRef(false);
-  const [loadedRevisions, setLoadedRevisions] = useState<
-    Record<string, number>
-  >({});
   useEffect(() => {
     current.current.alive = true;
     return () => {
@@ -66,26 +62,16 @@ export function CloudProjects({
   }, []);
   useEffect(() => {
     setRows([]);
-    setLoadedRevisions({});
-    setDescription("");
-    setPublished(false);
   }, [wallet.selected?.address]);
   const cloud = rows.find((row) => row.id === stored.project?.id);
-  useEffect(() => {
-    setDescription(cloud?.description ?? "");
-    setPublished(cloud?.published ?? false);
-    setProfile(
-      cloud?.project.profile ??
-        stored.project?.profile ?? {
-          category: "Other",
-          website: "",
-          example: false,
-        },
-    );
-  }, [stored.project?.id, cloud?.revision]);
+  const saveRevision = publicationSaveRevision(publication.draft, cloud);
   async function execute(payload: ProjectRequest) {
     if (!wallet.selected) {
       await wallet.connect();
+      return;
+    }
+    if (payload.action === "save" && (!publication.ready || publication.error || saveRevision === null || payload.revision !== saveRevision)) {
+      setMessage("Load your cloud projects, then use the existing cloud copy before saving. This protects its description and publication setting.");
       return;
     }
     if (lock.current) return;
@@ -104,20 +90,24 @@ export function CloudProjects({
         (current.current.draft === origin.draft &&
           current.current.description === origin.description &&
           current.current.published === origin.published &&
-          current.current.profile === origin.profile));
+          current.current.profile === origin.profile &&
+          current.current.publication === origin.publication));
     try {
       const result = await signedProjectRequest(payload, signer, valid);
       if (!valid()) return;
       if (payload.action === "list") {
         setRows(result.projects);
+        // A signed list is required before treating an unknown browser draft as
+        // a new cloud project. Existing records must be explicitly loaded.
+        if (current.current.draft === origin.draft && publication.draft.cloudRevision === null &&
+          !result.projects.some((row: CloudProject) => row.id === stored.project?.id)) {
+          publication.update({ cloudRevision: 0 });
+        }
         setMessage(
           `Loaded ${result.projects.length} cloud projects. Choose one below.`,
         );
       } else if (payload.action === "save") {
-        setLoadedRevisions((old) => ({
-          ...old,
-          [result.project.id]: result.project.revision,
-        }));
+        publication.fromCloud(result.project);
         setRows((old) => [
           result.project,
           ...old.filter((row) => row.id !== result.project.id),
@@ -141,14 +131,15 @@ export function CloudProjects({
     }
   }
   async function load(row: CloudProject) {
+    if (!wallet.selected || lock.current) return;
+    const version = wallet.getVersion();
     const error = await stored.restore(row.project);
     if (error) {
       setMessage(error);
       return;
     }
-    setLoadedRevisions((old) => ({ ...old, [row.id]: row.revision }));
-    setDescription(row.description);
-    setPublished(row.published);
+    if (wallet.getVersion() !== version) return;
+    publication.fromCloud(row);
     setMessage(
       "Cloud project loaded into this browser. Review its links in Studio.",
     );
@@ -181,17 +172,17 @@ export function CloudProjects({
           </p>
         )}
         {stored.project && (
-          <>
+          <fieldset disabled={busy || !publication.ready || !wallet.selected} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="product-field">
                 Category
                 <select
                   value={profile.category}
                   onChange={(e) =>
-                    setProfile({
+                    publication.update({ profile: {
                       ...profile,
                       category: e.target.value as ProjectProfile["category"],
-                    })
+                    } })
                   }
                 >
                   {PROJECT_CATEGORIES.map((x) => (
@@ -206,7 +197,7 @@ export function CloudProjects({
                   placeholder="https://your-project.com"
                   value={profile.website}
                   onChange={(e) =>
-                    setProfile({ ...profile, website: e.target.value })
+                    publication.update({ profile: { ...profile, website: e.target.value } })
                   }
                 />
               </label>
@@ -216,7 +207,7 @@ export function CloudProjects({
               <textarea
                 maxLength={1200}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => publication.update({ description: e.target.value })}
                 className="mt-2 min-h-24 w-full rounded-xl border border-line bg-bg p-3 text-sm"
                 placeholder="Who is this project for, and what can they do with it?"
               />
@@ -226,7 +217,7 @@ export function CloudProjects({
                 type="checkbox"
                 checked={profile.example}
                 onChange={(e) =>
-                  setProfile({ ...profile, example: e.target.checked })
+                  publication.update({ profile: { ...profile, example: e.target.checked } })
                 }
               />{" "}
               This is an example or demonstration project
@@ -235,7 +226,7 @@ export function CloudProjects({
               <input
                 type="checkbox"
                 checked={published}
-                onChange={(e) => setPublished(e.target.checked)}
+                onChange={(e) => publication.update({ published: e.target.checked })}
                 className="mt-1"
               />
               <span>
@@ -247,7 +238,7 @@ export function CloudProjects({
                 </span>
               </span>
             </label>
-          </>
+          </fieldset>
         )}
         {published &&
           stored.project &&
@@ -265,14 +256,16 @@ export function CloudProjects({
                 busy ||
                 !available ||
                 !stored.project.id ||
-                (!!cloud && loadedRevisions[cloud.id] === undefined)
+                !publication.ready ||
+                !!publication.error ||
+                saveRevision === null
               }
               onClick={() =>
                 stored.project &&
                 void execute({
                   action: "save",
                   project: { ...stored.project, profile },
-                  revision: loadedRevisions[stored.project.id!] ?? 0,
+                  revision: saveRevision!,
                   description,
                   published,
                 })
@@ -281,14 +274,12 @@ export function CloudProjects({
               {busy ? "Waiting for your storage request…" : "Save to cloud"}
             </Button>
           )}
-          {!workspaceProjects && (
-            <Button
+          <Button
               disabled={busy || !available}
               onClick={() => void execute({ action: "list" })}
             >
               Load my cloud projects
-            </Button>
-          )}
+          </Button>
         </div>
         {cloud && (
           <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
@@ -318,11 +309,16 @@ export function CloudProjects({
             </Button>
           </div>
         )}
-        {cloud && loadedRevisions[cloud.id] === undefined && (
+        {stored.project && saveRevision === null && (
           <p className="text-sm text-warn">
-            This project already exists in the cloud. Choose Use on this device
-            before editing and saving its next revision.
+            {cloud
+              ? "Choose Use on this device to load this cloud revision before editing and saving."
+              : "Load my cloud projects before the first save on this device. If this project already exists, choose Use on this device to restore its publication fields."}
           </p>
+        )}
+        {publication.error && <p role="alert" className="text-sm text-warn">{publication.error}</p>}
+        {stored.project && publication.ready && !publication.error && (
+          <p className="text-xs leading-6 text-faint">Publication fields are kept in this browser for the selected wallet and project. Save to cloud to update the shared profile.</p>
         )}
         {message && (
           <p role="status" className="text-sm leading-6 text-muted">
