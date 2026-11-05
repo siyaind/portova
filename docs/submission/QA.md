@@ -1,5 +1,20 @@
 # Validation record
 
+## November 5 final acceptance checkpoint
+
+This section supersedes the pending wallet-test language in the historical October entries below. The owner ran the live V3 testnet wallet/workspace rehearsals and reported the R1–R12 results and focused corrections. The detailed follow-up and remaining scope are in [the November 5 record](../qa-followup-2026-11-05.md).
+
+- Receipt backup import: passed across the earlier 81-record backup and a fresh export, with zero added receipts and a stable count of 81.
+- Explicit disconnect/reload and workspace reconnect feedback: passed.
+- Mobile liquidity and swap drawers at 390px: passed.
+- R8 monitoring: both reserve-drop alerts at block 325864 and the post-withdrawal report passed owner review.
+- Final swap feedback: 99999999 tPOT and 400 tPOT show the explicit native-balance refusal; 99999999 PQA shows the token-balance refusal. All remain disabled. On 0.01 tPOT the error clears and Swap enables after a quote and funding check. No wallet opened and nothing was signed during this retest.
+- The final acceptance release `790512c` passed 142 automated tests, type checking, production build and CI. The public example remained cloud Revision 10.
+
+The subsequently reported `/swap?pool=17` selection issue is a separate navigation correction: explicit LP requests must select that pool after discovery and must not fall back to an unrelated pair while it loads. It does not invalidate the completed balance tests. Browser verification of that correction is recorded with its release.
+
+Public minting, the exact collaborator-count boundary and the profile review-request flow do not gain manual passes from these results. NFT trading was runtime-disabled. These limits and best-effort worker/indexing behavior must remain visible in any submission claims. Passing tests and a testnet rehearsal are not a security audit or a mainnet production certification.
+
 ## October 25 code follow-up
 
 68 tests and the TypeScript/production-build checks pass for the shared wallet guards, staged NFT recovery, paginated discovery, fee measurements and Creator Launch Health. A read-only RPC check matched all 11 collections across three storage pages; a parent-state fee reconstruction covered three call classes and three accounts on runtime 3002. These historical reconstructions are not original wallet quotes. See ../REVIEW_FOLLOWUP.md and the discovery/fee JSON evidence in this directory.

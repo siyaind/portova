@@ -34,7 +34,7 @@ import {
 
 const FIELD = "h-10 w-full rounded-lg border border-line bg-bg px-3 font-mono text-sm";
 
-export function SwapScreen() {
+export function SwapScreen({ requestedPool = null }: { requestedPool?: string | null } = {}) {
   const chain = useChain();
   const wallet = useSubstrateWallet();
   const txs = useTxs();
@@ -49,7 +49,7 @@ export function SwapScreen() {
     return { symbols, decimals };
   }, [chain.assets]);
   const pools = chain.pools;
-  const [poolLp, setPoolLp] = useState<string | null>(null);
+  const [poolLp, setPoolLp] = useState<string | null>(requestedPool);
   const [flip, setFlip] = useState(false);
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
@@ -82,7 +82,7 @@ export function SwapScreen() {
   }, [chain.status, chain.refreshPools, chain.refreshAssets]);
 
 
-  const pool = pools?.find((item) => item.lpToken === poolLp) ?? pools?.[0] ?? null;
+  const pool = poolLp !== null ? pools?.find((item) => item.lpToken === poolLp) ?? null : pools?.[0] ?? null;
   const { signAndSend, current: operationCurrent } = useWalletOperation({ pool: pool?.lpToken, flip, amount, slippage });
   const assetIn = pool ? (flip ? pool.asset2 : pool.asset1) : null;
   const assetOut = pool ? (flip ? pool.asset1 : pool.asset2) : null;
@@ -347,6 +347,7 @@ export function SwapScreen() {
             </p>
           ) : (
             <>
+              {poolLp !== null && !pool && <p role="status" className="text-xs text-warn">{chain.discovery.pools.loading || (!chain.discovery.pools.complete && !chain.discovery.pools.error) ? `Loading the pool snapshot for LP #${poolLp}…` : `LP #${poolLp} is not in the loaded pool snapshot. Refresh pools or choose another pool.`}</p>}
               <label className="block text-xs text-muted">
                 Pool
                 <select
@@ -357,6 +358,7 @@ export function SwapScreen() {
                     setAmount("");
                   }}
                 >
+                  {poolLp !== null && !pool && <option value="" disabled>LP #{poolLp}</option>}
                   {pools.map((item) => (
                     <option key={item.lpToken} value={item.lpToken}>
                       {poolLabel(item, maps.symbols)}

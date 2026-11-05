@@ -1,5 +1,18 @@
 # Event requirements and delivery checklist
 
+## November 5 delivery status
+
+- [x] Live testnet application, source repository and technical documentation are available.
+- [x] Owner's wallet/workspace rehearsal and final swap balance-feedback retest are recorded in [QA](QA.md) and the [follow-up](../qa-followup-2026-11-05.md).
+- [x] Updated [three-minute demo outline](../DEMO.md) uses the current example: asset 644897333, collection 24, LP 17 and public Revision 10.
+- [ ] Record the final walkthrough, showing the workspace/collaboration and actual monitoring alerts as well as chain tools.
+- [ ] Upload the final video and check it plays without account access. Replace any placeholder in the event entry.
+- [ ] Finish the team's pitch deck; provide an accessible PDF or public link, rather than text in a link field.
+- [ ] Review the entry's team details, overview, website/repository links, feature claims and transaction evidence. Use native pallet integration evidence; no custom Portova contract address is claimed.
+- [ ] Confirm the current event requirements and deadline in the official portal, submit/update the entry, and retain the confirmation. The historical schedule below was verified October 24 and is not a new portal verification.
+
+Keep the free-pilot/disabled-checkout status, external bridge and testnet scope accurate. Do not claim paid traction, reviewed profiles, an embedded bridge, guaranteed real-time monitoring or full historical indexing. Public minting and other manually unverified paths are not part of the accepted demo evidence.
+
 Verified October 24, 2026 against the [official DoraHacks rules](https://dorahacks.io/hackathon/portaldot-hacker-house-2026/detail). This is a technical preparation checklist, not application-field copy.
 
 | Milestone | UTC | IST |

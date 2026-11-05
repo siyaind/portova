@@ -38,6 +38,12 @@ The owner subsequently passed receipt import (81 records remained 81 across old 
 
 The follow-up retained 142 passing tests and passed the production build. A read-only V3 node check using A's public address and the unquoted fee-estimation call returned the native shortfall message for both 99999999 and 400 tPOT, the token shortfall for 99999999 PQA, and a successful funding check for 0.01 tPOT. No wallet connection, signature or submission was used for this check. The remaining human acceptance check is the visible feedback on the live page.
 
+The owner then passed all four visible-message checks after a hard refresh on the live site: both native amounts show “Insufficient balance”, oversized PQA shows “Insufficient token balance”, and 0.01 tPOT clears the error and enables Swap after its quote/check. No wallet opened and nothing was signed. Together with the three earlier focused passes, the reported acceptance defects are closed.
+
+A separate navigation issue was reported afterward: `/swap?pool=17` ignored the query parameter and selected DUCAT / TSLA. Swap now receives the validated requested LP from the page URL, resets its selection when that URL changes, and waits for the requested pool instead of selecting another pair. Manual dropdown selection remains available. This is a navigation fix; transaction signing guards are unchanged.
+
+Browser checks against the optimized local build selected tPOT / PQA for LP 17, allowed manual selection of LP 14, restored LP 17 on refresh, and showed an explicit unavailable-pool notice with disabled amount/swap controls for a nonexistent requested LP. No wallet was connected or signed. The build and its type check passed; the only subsequent UI edit shortened the empty selection's label to its LP identifier. Demo and submission preparation documents now reference the accepted current objects and results.
+
 NFT trading was runtime-disabled during the owner's test. Public minting, the exact collaborator-count boundary, and the profile review-request flow were not manually run. Automated checks do not turn these into human acceptance passes. A testnet pilot demo must retain these limits; reliable scheduling/backfill and operational backup/restore remain separate production work.
 
 An extension may retain the URL at which the site was first authorized (the owner saw `/liquidity` during a swap). The application does not control the extension's origin label. The network, signer, reviewed call and decoded transaction determine the operation; no origin-label change is claimed in this patch.
