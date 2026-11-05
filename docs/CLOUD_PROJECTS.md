@@ -1,39 +1,39 @@
-# Cloud projects and shared discovery
+# Cloud projects
 
-October 28, 2026 implementation. Cloud features require the services below; deploying code alone does not provision them.
+Cloud workspaces use Neon Postgres for project records and Upstash Redis for rate limits and shared discovery. The hosted Production integrations are configured; other environments need their own setup.
 
-## Provisioning
+## Configuration
 
-Connect Neon Postgres and Upstash Redis to the existing Vercel Portova project. Enable Production (and Preview only if it has a separate test database). Keep credentials in Vercel, never in Git or chat.
+- `DATABASE_URL` or `POSTGRES_URL`: application database connection.
+- `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING`: direct migration connection where supplied by the integration.
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or integration aliases `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+- `PORTOVA_ORIGIN`: exact deployment origin, default `https://portova.vercel.app`.
+- `RATE_LIMIT_SALT`: private random value for rate-limit identifiers.
 
-- Postgres: `DATABASE_URL` (or `POSTGRES_URL`).
-- Redis REST: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (or the integration's `KV_REST_API_URL` and `KV_REST_API_TOKEN`).
-- `PORTOVA_ORIGIN` is optional for production's `https://portova.vercel.app`; set an exact origin for another deployment hostname. Wildcards are not accepted.
+Keep credentials in local/hosting environment configuration. Use separate staging/Preview storage. Run `npm run db:migrate` from a secure environment to apply the full checksummed migration set. GET `/api/projects/status` checks database/schema and Redis availability. Worker and operator configuration is in the [runbook](PRODUCTION_RUNBOOK.md).
 
-Run `npm run db:migrate` to apply the base schema and versioned workspace/indexer migrations. Do not apply only the old base schema. Redeploy after connecting integrations. GET `/api/projects/status` now checks database/schema and Redis availability.
+## Signed commands and revisions
 
-## Data and permissions
+Saving locally does not publish or upload a project. Cloud commands require an explicit Substrate message signature. Challenges expire after five minutes and bind origin, account, action, normalized payload hash and nonce. The database consumes authorization and changes records atomically. Repeating the same verified request returns its retained result for up to 24 hours; changing its signed payload does not authorize another action.
 
-Local drafts remain local until Save to cloud. The cloud record contains the project name, linked token/collection/pool IDs, reference account, launch plan, description, publisher and revision. Receipts and NFT recovery checkpoints are not backed up by this feature; export receipts separately.
+Updates require the expected cloud revision. Competing writes return a conflict; load the newer record before retrying. A device must load cloud projects before its first save to avoid overwriting an existing project from an incomplete local draft.
 
-Each save or private list requires a fresh Substrate message signature. The server creates a five-minute, single-use challenge binding origin, account, action, exact normalized payload hash and nonce. It verifies the signature and consumes the challenge atomically. Updates also require matching owner and cloud revision; concurrent writes return 409. Loading the project is required before updating a previously saved cloud record. November 1: challenge consumption and mutation are atomic; replaying the same verified request returns its stored result for up to 24 hours. No wallet key, seed, or persistent login token is stored.
+Cloud records contain project details, linked object IDs, publication and workspace metadata. Receipts and NFT recovery checkpoints are separate browser records; export receipts before clearing site data.
 
-Publishing is explicit. `/projects/[id]` serves only published records. Unpublishing requires a signed save and prevents future reads from that endpoint; previously downloaded copies cannot be recalled. The publisher's claim to linked objects is distinct from chain ownership, shown by Launch Health. The public page does not expose browser-local receipts. Public links are not an indexed marketplace or endorsement.
+## Workspace access
 
-Redis stores short-lived finalized discovery pages and rate-limit counters, not project records or wallet credentials. Cache keys bind genesis, object kind, finalized block and cursor. Head pointers expire after 15 seconds and pages after 60 seconds. Browser discovery falls back to direct RPC if the service is unavailable. Balances, permissions, fees and post-sign preflight continue to read the chain directly. Cloud mutations fail closed if the rate limiter or database is unavailable.
+Owners control publication, invitations, revocation, transfer and deletion. Invitations require acceptance; changed roles require renewed acceptance. Accepted viewers can read permitted workspace data. Eligible editors can save project content but cannot change publication or owner-only access settings. Revocation is enforced on subsequent server requests, including from already-open tabs.
 
-## Acceptance checks after provisioning
+Workspace transfer requires both parties and clears collaborators on acceptance. These permissions affect cloud records only. They cannot mint, withdraw or transfer assets without the runtime-authorized wallet's transaction signature.
 
-1. Apply schema; verify status and a fresh discovery request followed by the same block/cursor request (response header `X-Portova-Cache: hit`).
-2. With a disposable test wallet, save privately, list, reload and restore. Reject a signature and switch accounts while the signing dialog is open; no save should occur.
-3. Publish, open the link in another browser, then unpublish and confirm it returns 404. Verify another wallet cannot alter the record.
-4. Save from two devices at the same revision; only the first write succeeds. Load the newer revision before retrying.
-5. Replay an accepted challenge and try an expired/wrong-owner signature; all must fail. No secrets should appear in error responses.
-6. Disconnect Redis/Postgres in a separate preview environment. Cloud saves should stop with a friendly message; local and chain features should remain usable.
+## Public profiles and moderation
 
-## Manual transaction regression checks
+Public profiles are opt-in. Unpublishing prevents future public reads; downloaded copies and on-chain history cannot be recalled. Discover excludes private, hidden and incomplete profiles and excludes examples by default.
 
-The owner performs wallet signing. Retest LP10 initial deposit (including the reserved LP-account deposit), a subsequent deposit, removal and a swap. Review estimated fees, reserves, IDs and minimum received. Retest non-issuer token/NFT mint, duplicate NFT item ID, small initial liquidity, rejection, account switch/disconnect during approval, and pending-to-finalized receipt recovery. Start a new NFT launch after completing the previous one. Test two-tab project conflicts and blocked localStorage. These fixes and unit tests are not a security audit or proof of successful live wallet execution.
+Publishing confirms the publisher wallet, not all claims in its description. Role evidence comes from a dated finalized block and matches the current project revision/network. Operator review is a separate status; content edits and ownership transfers invalidate approval. Owners may request review. Operators inspect the public page/evidence and use `scripts/review-project.mjs` with credentials supplied through the environment. Review decisions are audited; republishing cannot bypass a moderation hide.
 
+## Cache and failure behavior
 
-November 1: accepted collaborators, plan quotas, billing, audit, indexer and monitor setup are described in [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md). Public reads now require Redis rate limiting and fail closed when it is unavailable.
+Redis caches finalized discovery by genesis, object type, block and cursor. Head pointers expire after 15 seconds and pages after 60 seconds. Discovery can fall back to browser RPC. Balances, permissions and signing preflight are read directly from the chain.
+
+Cloud mutations and rate-limited public endpoints fail closed when required storage/rate limiting is unavailable. `/api/projects/status` reports availability without credentials. The [QA record](submission/QA.md) distinguishes accepted wallet/workspace behavior from unverified paths.

@@ -6,7 +6,7 @@ A prepared 60-second captioned captured-screen walkthrough is live at https://po
 
 ## Final three-minute recording plan — November 5
 
-The final swap balance-message checks have passed on the live site, with no signatures. Receipt import, reconnect feedback, mobile navigation and R8 monitoring also have owner-reported passes. Use the current example below instead of the October objects in older recordings. This plan is a presentation outline; explain the product in your own words.
+The final swap balance-message checks have passed on the live site, with no signatures. Receipt import, reconnect feedback, mobile navigation and R8 monitoring also have recorded passes. Use the current example below instead of the October objects in older recordings. Explain the product in your own words.
 
 ### Prepare before pressing Record
 
@@ -41,13 +41,5 @@ Show the operational workspace and monitoring outcome prominently: they are the 
 Upload the final video to a public or unlisted page, then test playback in a private browser window without signing in. Replace any placeholder video URL in the submission. Supply a real deck PDF/public URL and test its permissions separately. The existing 60-second walkthrough is supplementary historical material; it does not replace this updated final recording.
 
 The owner performs any real wallet connection/signature. No seed phrase or wallet popup containing private information belongs in a recording. The prepared product walkthrough is read-only and does not claim a new treasury transfer.
-
-## Reproducible recovery
-
-1. Open Activity and wait for the testnet connection.
-2. Paste hash `0xf60fcae4e346fc06e0e4164ffa37c0ea0494baa73c10b72c9a491b2dbeb86095`.
-3. Enter inclusion block `159687`, then Find receipt.
-4. Wait for Finalized. It must show extrinsic index 1 and the independent explorer link.
-5. Reload. The receipt remains. Export and import are safe to demonstrate with this public record.
 
 Historical evidence and its verification date are in [EVIDENCE](submission/EVIDENCE.md). Human wallet QA is in [QA](submission/QA.md).

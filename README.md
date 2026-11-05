@@ -1,157 +1,95 @@
-# PORTOVA
+# Portova
 
-PORTOVA is a non-custodial creator app for the Portaldot V3 testnet. A person can create a fungible token, launch an NFT collection, open a pool, add and remove liquidity, and swap, with every balance and quote read from the chain. The app does not hold a key and does not ask for a seed phrase.
+A workspace for launching and operating native assets on Portaldot V3 Testnet. Create tokens and NFT collections, manage liquidity, and coordinate a project with private cloud storage, team permissions and monitored changes.
 
-Live app: https://portova.vercel.app
+[Live website](https://portova.vercel.app) · [Documentation](docs/README.md) · [Roadmap](ROADMAP.md) · [Demo guide](docs/DEMO.md)
 
-Repository: https://github.com/siyaind/portova
+## Features
 
-Track: Ecosystem DApps, Portaldot Hacker House 2026.
+- Guided token/NFT launch with persistent drafts and finalized-object linking.
+- Import existing assets and inspect their finalized on-chain roles.
+- Native pools, liquidity deposits/withdrawals and exact-input swaps with balance, fee and minimum-output reviews.
+- Private project workspaces, explicit publication, public profiles and an opt-in project directory.
+- Accepted viewer/editor invitations, revocation, revision conflict protection and audit history.
+- Bounded finalized event indexing, sampled project monitoring and downloadable reports.
+- Wallet-bound transaction reviews, durable NFT launch recovery and receipt export/import.
 
-## Network
+Portova uses the native `Assets`, `Nfts`, `AssetConversion` and `Balances` pallets. There is no custom Portova contract or token. Keys remain in the connected wallet; Portova never requests a seed phrase.
 
-| | |
-|---|---|
-| Chain | Portaldot V3 testnet |
-| Spec | `portaldot-v3` |
-| Substrate | `wss://test-node-v3.portaldot.dev` |
-| EVM | `https://test-evm-rpc-v3.portaldot.dev` |
-| EVM chain id | `420420777` |
-| Native asset | tPOT, 14 Substrate decimals, SS58 prefix 42 |
-| Testnet explorer | https://scanner-testnet-v3.portaldot.dev |
-| Verified genesis | `0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd` |
+## Current release
 
-Chain features need no environment file; endpoints default to `lib/network.ts`. Optional wallet-authenticated cloud projects use Postgres, and shared discovery/rate limiting use Redis. See [cloud setup and acceptance checks](docs/CLOUD_PROJECTS.md). This build does not talk to any other chain.
+Portova is a **testnet pilot**. Neon Postgres and Upstash Redis support the hosted workspace. A scheduled worker runs indexing and monitoring on a best-effort basis; historical coverage is incomplete.
 
-## What is on chain
+Explorer is free. Proposed Pro and Team plans are 19 and 49 USDC per 30 days, respectively. **Checkout is disabled.** The free pilot provides bounded access to team features; see the [business model](docs/BUSINESS_MODEL.md).
 
-Signing uses a Substrate wallet through Polkadot.js, Talisman, SubWallet, or another compatible extension. The signed calls use the runtime pallets, not a contract deployed by this project.
+The bridge is an external link. NFT trading remains unavailable while the runtime Trading feature is disabled. Mainnet, embedded bridging, royalties, auctions, vesting and leaderboards are not implemented. Future work is described in the [roadmap](ROADMAP.md).
 
-| Action | Pallet |
-|---|---|
-| Create a token, set metadata, mint supply | `Assets` |
-| Create a collection, set metadata, mint an item | `Nfts` |
-| Create a pool, add liquidity, remove liquidity, swap | `AssetConversion` |
-| Free/spendable tPOT and reviewed proceeds withdrawal | `System.Account` and `Balances.transferKeepAlive` |
+## Run locally
 
-A fee is shown from `paymentInfo` before the wallet opens. A swap shows the node quote and the minimum received, and it is submitted only when a fresh quote still covers that minimum. A finalized result is recorded only after `ExtrinsicSuccess`.
+Use Node.js 22 or newer.
 
-Marketplace listing and buying stay off while `Nfts.Features` does not include Trading. Vesting, royalties, auctions, ink! contracts, and mainnet are not in this build.
-
-## Architecture
-
-```mermaid
-flowchart LR
-  user[Creator in the browser]
-  wallet[Substrate wallet]
-  app[PORTOVA Next.js]
-  substrate[Portaldot V3 Substrate]
-  evm[Revive EVM RPC]
-
-  user --> app
-  app --> wallet
-  wallet --> substrate
-  app --> substrate
-  app --> evm
-  substrate --> assets[Assets]
-  substrate --> nfts[Nfts]
-  substrate --> pools[AssetConversion]
-```
-
-The browser reads Substrate storage for tokens, collections, pools, and the native balance. The EVM client is present for the Revive endpoint and does not replace those pallet reads. Local drafts and receipts stay in this browser; project records can be explicitly saved to the authenticated cloud workspace. Receipts save inclusion hints and search checkpoints, recover in the background after reload, and support JSON export/import. Imported success claims require chain verification. Ownership, supply, reserves, and fees stay on the chain.
-
-## Run it locally
-
-Node.js 22 or newer.
-
-```bash
-npm install
+```sh
+npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. Connect a Substrate wallet that holds testnet tPOT. The hackathon operators distribute tPOT to the native address submitted at registration. PORTOVA does not run a faucet.
+Open http://localhost:3000. Public chain reads need no environment file. Signing requires a compatible injected Substrate wallet and testnet tPOT. Portova does not operate a faucet.
 
-```bash
+Cloud workspaces require Postgres and Redis credentials in the local or hosting environment. Follow [cloud configuration](docs/CLOUD_PROJECTS.md); never commit credentials.
+
+```sh
 npm test
 npm run typecheck
 npm run build
+npm run start
 ```
 
-`npm test` runs the unit tests in `lib/*.test.ts`.
+The test command runs TypeScript unit/integration tests and migration checks. Tests do not sign transactions or use customer funds. Manual testnet acceptance and its limits are recorded in [QA](docs/submission/QA.md).
 
-## Routes
+## Network
 
-| Route | What it does |
+| Setting | Value |
 |---|---|
-| `/` | Public landing page |
-| `/launch` | Saved guided token/NFT launch, optional liquidity, automatic finalized-object linking and launch-health review |
-| `/overview` | Connected workspace |
-| `/token-launchpad` | Create an asset |
-| `/token/[id]` | Read one asset |
-| `/nft-launchpad` | Create a collection |
-| `/collection/[id]` | Read a collection and mint another item |
-| `/liquidity` | Create a pool, deposit, and withdraw |
-| `/swap` | Quote and swap against a stored pool |
-| `/market` | Read item prices. Trading stays disabled while the runtime bit is off |
-| `/studio` | One local project linking an asset, a collection, a pool, and a proceeds account |
-| `/portfolio` | Free tPOT and created-asset balances |
-| `/treasury` | Proceeds balance, withdrawal review, fee guard and wallet confirmation |
-| `/activity` | Saved receipts, inclusion-block lookup, older-block recovery, export/import and call catalog |
-| `/run` | A separate signed path for one token, pool, deposit, and swap |
-| `/settings` | Network and wallet facts |
+| Substrate RPC | `wss://test-node-v3.portaldot.dev` |
+| Approved runtime | `portaldot-v3`, spec version `3002` |
+| Native asset | tPOT, 14 Substrate decimals, SS58 prefix 42 |
+| Genesis | `0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd` |
+| Explorer | [V3 testnet scanner](https://scanner-testnet-v3.portaldot.dev) |
 
-## Testnet objects from this build
+The application checks network identity and pauses signing on an unreviewed runtime. EVM tooling is separate from native Substrate signing; see [network compatibility](docs/NETWORK_COMPATIBILITY.md).
 
-These calls were recorded from earlier app runs on V3 testnet. They are examples, not a contract address. The official explorer is https://scanner-testnet-v3.portaldot.dev. The swap below was independently reverified on October 24 at block 159687, extrinsic 1, with matching successful dispatch and canonical finality. Other hashes are historical records.
+## Main routes
 
-| Step | Hash |
+| Route | Purpose |
 |---|---|
-| Create asset 9192 | `0xda2ee99192e00af0cd97b2f084bce8868fc10c3c2a7da453e963c9b36609f2d0` |
-| Create collection 7 | `0x6dec066224f1fc0664596bee63b23582d67c9053fbc651eaefa62559e8f192b4` |
-| Create pool LP 5 | `0xb68295a5bc71d3124f949c522e602587f9e39fc8cbce514b47f46f84b608710b` |
-| Create asset 9194 | `0xc01c385b2f9d82f64f94cfda96953b016f1e305fd00c257ce39be9b86949b220` |
-| Create pool LP 7 | `0xb2d0905a703ab1b73ad8080d6fa8d3969a1bf610376225926f7f4e1d258d3e2f` |
-| Swap 0.1 tPOT on LP 7 | `0xf60fcae4e346fc06e0e4164ffa37c0ea0494baa73c10b72c9a491b2dbeb86095` |
+| `/workspace` | Cloud projects, collaborators, audit, monitoring and support |
+| `/launch` · `/import` | Start a guided launch or link an existing project |
+| `/explore` · `/projects/[id]` | Public directory and published profiles |
+| `/token-launchpad` · `/token/[id]` | Native asset creation and management |
+| `/nft-launchpad` · `/collection/[id]` | NFT collection creation and management |
+| `/liquidity?pool=17` · `/swap?pool=17` | Select a specific LP pool for liquidity or swaps |
+| `/studio` · `/portfolio` · `/treasury` | Local project, holdings and reviewed proceeds transfers |
+| `/activity` | Receipts, recovery and backups |
+| `/network` · `/settings` | Chain discovery, network and wallet facts |
+| `/pricing` · `/bridge` | Plans/pilot and external bridge information |
+| `/tools` | Advanced tools, gallery/trading status and transaction rehearsal |
 
-## Not in this build
+## Project structure
 
-- A deployed ink! or Solidity contract. Token, collection, and pool state live in the pallets above.
-- List, cancel, and buy. The testnet Trading feature is off.
-- Vesting of a created token, royalties, auctions, a bridge, and mainnet.
-- A full account or revenue indexer. The optional worker indexes related native object calls from an explicit finalized starting block. Browser Activity retains separate receipts and RPC recovery.
+| Directory | Contents |
+|---|---|
+| `app/` | Next.js routes, server endpoints and styles |
+| `components/` | Product screens, providers and wallet interfaces |
+| `lib/` | Chain reads, transaction guards, storage, backend services and tests |
+| `scripts/` | Database migrations, workers, backups and evidence tools |
+| `.github/workflows/` | CI and scheduled indexing/monitoring |
+| `docs/` | Architecture, setup, security, operations and validation |
+| `public/demo/` | Published historical walkthrough, retained while the final demo is recorded |
 
-## October 24 update and demo
+## Deployment and evidence
 
-The [official V3 endpoint announcement](https://x.com/Portaldot_Dev/status/2113571130527318088) keeps separate testnet services. Portova verifies its testnet genesis before enabling signing. A rollout announcement does not switch the app to mainnet or enable NFT Trading; `Nfts.Features` was 0 at the captured block.
+The hosted application deploys from this repository's `main` branch through Vercel. Production builds verify additive database migrations before promotion. See [deployment](docs/DEPLOYMENT.md) and the [operations runbook](docs/PRODUCTION_RUNBOOK.md).
 
-Treasury withdrawals require the proceeds account, a valid prefix-42 recipient, a positive 14-decimal amount, a reviewed keep-alive fee/balance budget and explicit wallet confirmation. Reviews expire after 60 seconds and are invalidated by account or draft changes. The signed call is rechecked before broadcast.
+The current public example links asset **644897333**, collection **24** and **LP 17**. It is explicitly labelled an example, not a customer or an endorsed project. [Technical evidence](docs/submission/EVIDENCE.md) distinguishes recorded wallet results, read-only verification and historical snapshots.
 
-See [build state](docs/BUILD_STATE.md), [network evidence](docs/submission/network-evidence.json), [architecture](docs/ARCHITECTURE.md), [QA and remaining human wallet checks](docs/submission/QA.md), [demo walkthrough](docs/DEMO.md), and [event checklist](docs/submission/CHECKLIST.md). Automated wallet tests use fake adapters; no new treasury transfer was signed during this update.
-
-## October 25 hardening and Creator Launch Health
-
-Creator Studio now combines ownership, issuer permissions, supply, paginated holders, LP reserves/share, a constant-product swap scenario and confirmed browser receipts in a Creator Launch Health view. Outside-issuer balance is labeled separately from circulating supply; the scenario excludes fees and is not an executable quote. The linked treasury account remains a balance/withdrawal reference, not an automatic revenue-routing system.
-
-All signing screens bind their operations to the originating wallet, extension, network, runtime, connection and reviewed draft. Both NFT routes share a durable two-signature checkpoint. Collection and listing discovery enumerate storage pages instead of fixed numeric ranges, and listing coverage is explicit. Receipts retain pre-sign fee estimates and matching charged-fee events; the fee reserve is a cautious policy, not an empirical maximum.
-
-See the [review response and owner test checklist](docs/REVIEW_FOLLOWUP.md), [pagination evidence](docs/submission/discovery-evidence.json), and [historical fee measurements](docs/submission/fee-measurements.json). The user is responsible for real-wallet acceptance testing.
-
-## Guided launch and reliability follow-up
-
-Start at `/launch` to save a token or NFT plan, resume form drafts, review wallet funding and costs, attach finalized objects to the same project, optionally set up liquidity, and inspect Launch Health. Existing transaction safeguards and explicit signatures are preserved. Portfolio/linked-account reads now show snapshot freshness and incomplete results; discovery runs in independent pages; cross-tab locks coordinate NFT launches, receipt merging and versioned project writes. Wallet-dialog accessibility and browser security headers are included.
-
-See [guided launch, technical changes and acceptance boundaries](docs/GUIDED_LAUNCH.md). The automated suite now has 84 tests. Wallet acceptance testing remains owner-run.
-
-
-## November 1 operations workspace
-
-Open `/workspace` for cloud project selection, accepted wallet invitations, viewer/editor access, audit history, monitored changes and bounded activity reports. `/pricing` describes Explorer, optional Pro (19 USDC/30 days) and Team (49 USDC/30 days), with pilot inquiries. Crypto checkout is disabled during the pilot. It uses native USDC on Base if explicitly enabled. No app transaction fee or Portova token is introduced.
-
-Cloud commands now consume authorization and mutate records atomically, storing results for safe retries. Owned-project quotas and collaborator permissions are enforced server-side. Public reads are rate-limited. Document scripts use request-specific CSP nonces. Runtime 3002 of the verified testnet is the approved compatibility baseline; unreviewed upgrades pause signing.
-
-The finalized-block indexer and project monitor require an operator worker. They do not infer project revenue from object activity. Finalized USDC payment proofs control prepaid access. There are no card payments, token approvals or automatic debits; invoices and paid terms are visible in the workspace. Pilot/support/abuse/deletion requests are private and operator handled.
-
-Configuration, migrations, worker deployment, monitoring, backups, restore drills and launch evidence: [production runbook](docs/PRODUCTION_RUNBOOK.md). Customer, pricing and validation assumptions: [business model](docs/BUSINESS_MODEL.md). This is testnet software with production foundations; real-wallet acceptance, live integration/load testing and independent security/legal review remain required before a real-value launch.
-
-
-Worker activation: `.github/workflows/worker.yml` schedules finalized indexing, monitoring and payment reconciliation using repository/Vercel secrets. This is a best-effort schedule; monitor lag and provider quotas. Crypto recipient configuration uses only a public address; no merchant signing key is needed. Checkout remains disabled pending customer-value validation.
+This repository contains testnet software. Automated checks and successful rehearsals do not establish an independent security audit or mainnet production readiness.

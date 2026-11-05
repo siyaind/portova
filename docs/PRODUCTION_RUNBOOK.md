@@ -1,10 +1,10 @@
 # Production activation and operations
 
-This release adds code and isolated database tests. It remains a testnet application. Production readiness requires the acceptance evidence below; installing Redis alone does not satisfy it.
+Portova's hosted pilot uses Neon Postgres, Upstash Redis and a scheduled indexer/monitor worker. It remains a testnet application. Recorded acceptance is in [QA](submission/QA.md); the additional gates below apply before a real-value production launch.
 
 ## Configure isolated environments
 
-Use separate databases, Redis instances, billing keys and webhook secrets for staging and production. Add credentials only through the hosting/provider configuration. Do not commit or paste secrets. Node.js 22+ is required.
+Use separate databases, Redis instances and operator/payment configuration for staging and production. Add credentials only through the hosting/provider configuration. Do not commit or paste secrets. Node.js 22+ is required.
 
 - `DATABASE_URL` or `POSTGRES_URL`: Neon Postgres connection.
 - `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING`: direct connection for the migration runner and its session lock. Marketplace integrations normally supply this alongside the pooled application URL.
@@ -16,11 +16,11 @@ Use separate databases, Redis instances, billing keys and webhook secrets for st
 
 Run `npm run db:migrate` from a secure environment containing the database variable. It applies versioned, checksummed migrations under a database advisory lock, within transactions. Existing cloud-schema installations are compatible. Do not modify an already applied migration; add a new version. Use a restricted app database role with only Portova tables/functions, and a separate migration role. Provider account access requires MFA and least privilege.
 
-GET `/api/projects/status` performs bounded database/schema and Redis checks. It does not disclose credentials. GET `/api/ops/health` requires `Authorization: Bearer <CRON_SECRET>` and includes RPC, finalized height, indexed range and lag. Configure an external monitor with its secret in that monitor's secret store. Alert on unavailable dependencies, request errors, worker failures, increasing index lag and subscription/webhook failures. Logs intentionally omit request bodies, wallet signatures and raw database errors.
+GET `/api/projects/status` performs bounded database/schema and Redis checks. It does not disclose credentials. GET `/api/ops/health` requires `Authorization: Bearer <CRON_SECRET>` and includes RPC, finalized height, indexed range and lag. Configure an external monitor with its secret in that monitor's secret store. Alert on unavailable dependencies, request errors, worker failures, increasing index lag and payment-reconciliation failures. Logs intentionally omit request bodies, wallet signatures and raw database errors.
 
 ## Enable workers
 
-Deploy the Node worker `npm run ops:worker` on a long-running compute service, with `PORTOVA_ORIGIN` and `CRON_SECRET`. `node scripts/worker.mjs --once` is available for a scheduler. Do not place secrets in URLs or command arguments. No scheduled automation is created by this repository.
+The existing GitHub workflow is described below. For continuous operation, deploy `npm run ops:worker` on a long-running compute service with `PORTOVA_ORIGIN` and `CRON_SECRET`. `node scripts/worker.mjs --once` is available for another scheduler. Do not place secrets in URLs or command arguments.
 
 The worker invokes bounded POST `/api/ops/run?kind=indexer` jobs (up to 20 sequential finalized blocks or a 35-second indexing budget), and monitor jobs every fifth cycle. State is in Postgres. Concurrent indexers compare checkpoint and parent hashes atomically. A mismatch stops progress and requires investigation. Jobs never submit chain transactions.
 
@@ -30,13 +30,13 @@ Monitoring samples up to five paid projects per job, maintaining a cursor. It co
 
 ## Crypto payments and scheduled worker
 
-Stripe has been removed. Optional prepaid terms use native USDC on Base chain 8453, contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, verified against Circle's contract list. Set `CRYPTO_PAYMENT_RECIPIENT` to the operator's public receiving address. `CRYPTO_PAYMENTS_ENABLED=true` enables invoice creation; leave it false during a free pilot. `BASE_PAYMENT_RPC_URL` optionally supplies a trusted Base RPC (default public mainnet.base.org). No merchant private key is needed or stored.
+Optional prepaid terms use native USDC on Base chain 8453, contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`. Checkout is currently disabled by `CHECKOUT_RELEASE_ENABLED=false` in `lib/plans.ts`. Setting an environment flag alone does not override that release policy. A future approved activation must pass the payment acceptance/commercial gates, deliberately change the release policy, set `CRYPTO_PAYMENTS_ENABLED=true`, and configure the public `CRYPTO_PAYMENT_RECIPIENT`. `BASE_PAYMENT_RPC_URL` optionally supplies a trusted Base RPC (default public mainnet.base.org). No merchant private key is needed or stored.
 
 The buyer creates an invoice with their Substrate workspace identity, authorizes invoice credit using their EVM payment wallet, and explicitly approves a direct USDC transfer. There are no allowances or automated debits. Proof binds the site, invoice, workspace account, amount, recipient and Base network. The backend verifies the exact USDC Transfer event, payer, recipient, amount, canonical receipt, timestamp window and finalized height. A transaction can credit only one invoice. Identical retries cannot extend access twice. Each credited payment adds a nonoverlapping 30-day term after existing paid time. Entitlements are calculated in the database, including scheduled plan changes and expiry. Prices remain experimental and checkout can remain disabled while customer value is validated.
 
 Invoices expire after one hour; timely transfers can be recovered for seven days after expiry. Over/underpayment, wrong chain/token, late transfers, disputes and refunds require operator support. An open wallet transfer cannot be canceled by leaving Portova; the customer must dismiss it in the wallet. Base finality may take around 20 minutes or longer. A pending hash is never a reason to pay twice.
 
-The GitHub workflow `.github/workflows/worker.yml` runs on a best-effort five-minute schedule, with manual dispatch available. `PORTOVA_CRON_SECRET` in repository Actions secrets must equal Vercel Production `CRON_SECRET`. It runs bounded indexer catch-up, project monitoring and pending-payment reconciliation. GitHub schedules can be delayed and public-repository schedules may be disabled after 60 days without repository activity. Monitor lag; use a dedicated continuous worker for an SLA. Railway provisioning currently requires reconnection. The persistent `scripts/worker.mjs` remains available for that upgrade.
+The GitHub workflow `.github/workflows/worker.yml` runs on a best-effort five-minute schedule, with manual dispatch available. `PORTOVA_CRON_SECRET` in repository Actions secrets must equal Vercel Production `CRON_SECRET`. It runs bounded indexer catch-up, project monitoring and pending-payment reconciliation. Schedules can be delayed or disabled by the provider. Monitor job activity and lag; use a dedicated continuous worker before offering an SLA. The persistent `scripts/worker.mjs` supports that upgrade.
 
 Before enabling payments, run receipt/proof/replay tests and human wallet acceptance, including finality delay, a lost response, invoice expiry, queued terms, wrong token/chain/payer/amount, and operator refund recovery. Never run payment tests by moving customer funds automatically.
 

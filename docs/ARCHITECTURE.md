@@ -1,45 +1,47 @@
 # Architecture
 
-November 1 update: the optional operations backend adds Postgres workspaces/audit/entitlements, Redis rate limits/discovery, finalized object-event indexing, sampled project monitoring and provider-verified billing. The approved runtime is testnet 3002; unreviewed upgrades pause signing. Services require explicit activation and testing. These additions supersede older statements below about a browser-only backend or no indexer. See [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md) and [BUSINESS_MODEL.md](BUSINESS_MODEL.md).
-
-Updated October 25, 2026. PORTOVA is a browser-based Next.js application on Vercel, using Portaldot V3 testnet runtime pallets.
-
-The October 25 update adds a shared wallet-operation guard to every signing screen, a common durable two-step NFT launch state machine, paginated storage discovery, prospective fee measurements and a pinned Creator Launch Health view in Studio. See REVIEW_FOLLOWUP.md for the validation scope and remaining owner wallet tests.
+Portova is a Next.js application on Vercel. The browser signs native Portaldot V3 testnet calls through an injected Substrate wallet. Server endpoints provide authenticated workspaces, public discovery and operational jobs.
 
 ```mermaid
 flowchart LR
-  user[Creator] --> app[Next.js browser app]
-  app --> extension[Substrate wallet extension]
+  user[Project team] --> app[Next.js browser app]
+  app --> wallet[Substrate wallet]
   app --> rpc[Portaldot V3 testnet RPC]
-  extension --> app
-  app --> local[Local projects and receipt backups]
-  rpc --> assets[Assets]
-  rpc --> nfts[Nfts]
-  rpc --> pools[AssetConversion]
-  rpc --> balances[System and Balances]
-  app --> explorer[Official testnet explorer]
+  app --> api[Next.js server routes]
+  app --> local[Local drafts and receipts]
+  api --> db[Neon Postgres]
+  api --> redis[Upstash Redis]
+  api --> rpc
+  worker[Scheduled worker] --> api
+  rpc --> pallets[Assets / Nfts / AssetConversion / Balances]
 ```
 
-## Reads and writes
+## Chain operations
 
-ChainProvider checks the genesis and runtime name before marking the connection live. It reads assets, collections, pools and heads. Pool positions use a pinned finalized block so reserves and LP issuance share a snapshot. Missing reads remain unavailable rather than invented balances or prices.
+ChainProvider verifies the configured genesis and reviewed runtime, subscribes to heads and discovers assets/collections/pools in independent pages. Finalized reads expose their block and completeness. Missing data remains unavailable rather than becoming a zero balance or empty result.
 
-Assets manages fungible token creation/metadata/minting. Nfts manages collection creation, metadata and minting. AssetConversion handles pools, liquidity and swaps. Treasury uses Balances.transferKeepAlive. No new token, AMM or escrow contract is deployed.
+Native Assets handles fungible creation, metadata and minting. Nfts handles collections and items. AssetConversion handles pool setup, liquidity and swaps. Treasury uses Balances.transferKeepAlive. Portova deploys no custom contract.
 
-Preflight checks the exact call, finalized account state, frozen funds, existential deposit, required deposits and a guarded fee budget. Swap quotes include minimum output and expire; a fresh post-sign check prevents a changed quote from broadcasting below the reviewed minimum.
+Shared wallet-operation guards bind a call to its account, extension, network, runtime, connection and reviewed draft. Preflight checks finalized spendable balance, required deposits and guarded fees. Fresh swap quotes must cover the reviewed minimum before signing/broadcast. Durable NFT checkpoints let the same authorized account recover a two-stage launch.
 
-Treasury binds its review to network, sender, wallet source, proceeds account, destination and amount. It validates before opening the signer and after signing, before broadcast. A signature can be discarded if the reviewed state changes.
+## Persistence
 
-## Wallet lifecycle
+Local project drafts, form state, NFT checkpoints and transaction receipts use browser storage with revision checks and cross-tab coordination. Storage failures are surfaced. Receipt recovery saves inclusion hints and bounded search checkpoints; imported success/account/charged-fee claims require chain verification.
 
-SubstrateWalletProvider enables an injected extension, reads authorized accounts and subscribes to account permission updates. Disconnect invalidates pending connection results. Reload reconnects only after a prior connection in that browser session. No private key is stored by Portova. EVM wallet support is separate; its 18-decimal tooling representation is not converted to native 14-decimal tPOT.
+Cloud commands use wallet-signed, origin/action/payload-bound challenges. Postgres consumes authorization and applies mutations atomically, retains idempotent results, checks revisions and enforces owner/member permissions. Cloud workspace access never grants chain authority.
 
-## Persistence and recovery
+Publishing is explicit. Public project reads exclude private and moderated-hidden records. Finalized role evidence is tied to a network and project revision; it is distinct from operator review or endorsement.
 
-Projects and receipts are local browser records. TxProvider sits inside the chain and wallet providers, saves account/network/timestamp and inclusion hints, and recovers unresolved hashes from any route. It uses one bounded recovery page at a time, saves a backward cursor, and backs off between checks. A known inclusion block permits a direct old-block lookup. Imported outcome claims are reset to Unknown until RPC verification.
+Redis stores short-lived finalized discovery pages and rate-limit counters. Signing reads remain direct. Required storage/rate-limiter failures stop cloud operations; browser discovery can fall back to RPC.
 
-Finalized means matching system.ExtrinsicSuccess at the transaction's extrinsic index, in a canonical finalized block. Missing events, pruned history and incomplete RPC calls cannot establish success. JSON export/import supports moving receipts to another browser. The official explorer is independently linked; Portova has no full account-history indexer.
+## Indexing and monitoring
 
-## Deployment
+The worker invokes authenticated, bounded server jobs. Postgres stores finalized checkpoints, object-associated events, monitored snapshots and alerts. Cursor/checkpoint comparisons protect concurrent jobs. These records describe their covered range; they are not a complete account or revenue ledger.
 
-Next.js static/client routes are built by Vercel. Public RPC settings are in lib/network.ts. No environment file is required. Local environment files, Git metadata and build outputs are excluded from source uploads. See [deployment](DEPLOYMENT.md).
+Monitoring compares supported roles/status/reserves between snapshots. Alerts describe observed changes, not their cause. The GitHub schedule is best effort and historical indexing remains behind; coverage and lag must be visible.
+
+## Deployment boundaries
+
+Production uses Postgres and Redis in Vercel's `iad1` region. Secrets stay in hosting/provider configuration. The production build verifies additive migrations before promotion; local/Preview builds do not migrate production. EVM tooling and optional disabled crypto billing are separate from native Substrate signing.
+
+See [security](SECURITY_MODEL.md), [cloud configuration](CLOUD_PROJECTS.md), [deployment](DEPLOYMENT.md) and the [operations runbook](PRODUCTION_RUNBOOK.md).

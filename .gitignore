@@ -7,4 +7,7 @@ out
 tsconfig.tsbuildinfo
 
 .vercel
+.DS_Store
+Thumbs.db
+coverage/
 .env*

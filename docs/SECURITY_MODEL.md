@@ -1,49 +1,41 @@
 # Security model
 
-Updated October 24, 2026. This is an implementation description, not an audit.
+This describes implementation boundaries. It is not an independent audit or a mainnet security certification.
 
-October 25 follow-up: every signing route now shares a context guard for account, extension source, genesis, runtime, connection, mount lifetime and draft revision. The guard is checked before signing and after asynchronous validation before broadcast. Swap retains the minimum shown for review instead of silently lowering it after a fresh quote. Both NFT routes share durable launch checkpoints, ownership/item checks and safe retry after a proven pre-broadcast rejection. Invalid checkpoints block new creation until explicitly cleared.
+## Keys and authority
 
-Preflight now reserves max(4383 planck, 10% of the estimate) and refuses marginal remaining headroom. This is a policy, not an empirical fee maximum. Original estimates and matching charged-fee events are saved prospectively. Imported account/charged-fee claims are cleared until RPC verification. See REVIEW_FOLLOWUP.md for measured evidence and the user-owned live-wallet tests.
+The injected wallet holds signing keys. Portova never requests a seed/private key. Genesis and reviewed-runtime checks guard native transaction access. EVM and Substrate identities remain separate.
 
-## Authority and network
+On-chain permissions come from the runtime. Treasury requires the linked proceeds authority, canonical account matching, a valid prefix-42 recipient and a keep-alive transfer. Cloud owner/editor/viewer roles do not grant asset authority.
 
-The user's injected wallet holds the key. Portova never requests a seed or private key. ChainProvider verifies the expected testnet genesis and runtime name before marking the connection live. The rollout does not silently switch users to mainnet. EVM addresses and native Substrate accounts remain distinct.
+## Review and submission
 
-Treasury permits only the linked proceeds authority to review a withdrawal. Canonical public-key comparison handles alternate SS58 encodings, while recipients must be valid prefix-42 addresses. The transfer keeps the sender alive. It cannot withdraw somebody else's funds or bypass chain permissions.
+Amounts use integer arithmetic and strict decimal/u128 parsing. Preflight reads finalized balances, frozen funds, existential deposit and required deposits. The fee budget reserves max(4383 planck, 10% of the estimate) and refuses marginal remaining headroom. This is a cautious policy, not a proven fee maximum.
 
-## Review and broadcast
+Every signing flow binds its operation to the originating account, extension, genesis, runtime, connection, mount lifetime and draft revision. Checks run before signing and after asynchronous validation before broadcast. Disconnect invalidates late permission/account results. Explicit disconnect persists within the tab's session.
 
-Amounts use integer arithmetic and strict decimal/u128 parsing. Preflight reads finalized account state, frozen funds, existential deposit, deposits and guarded fees. Unknown or insufficient values stop before the wallet. Guards reduce avoidable failures; runtime dispatch can still fail.
+Treasury, swap and liquidity reviews expire. Swap retains the reviewed minimum and requires a fresh quote to cover it. Balance errors are shown even without a quote; any placeholder minimum used for fee estimation is never signed or submitted. Required balance/fee reads fail closed. NFT creation uses durable, wallet-bound checkpoints and ownership/item checks before resuming.
 
-Treasury requires a separate confirmation after review, with a 60-second limit. Network, sender, extension, project proceeds account, recipient and amount are checked across asynchronous wallet access. The exact reviewed call is signed, revalidated and then broadcast. Permission changes revoke the active selection. Disconnect invalidates late connection results. Double submission is blocked while an action is pending.
+These guards reduce avoidable failures. Runtime races can still cause a submitted call to fail and pay a fee.
 
-Swaps check a fresh runtime quote against the reviewed minimum, with a quote expiry. NFT Trading remains disabled unless the runtime explicitly enables it. Issuer and collection permissions remain runtime authorities, not frontend promises.
+## Receipt trust
 
-## Receipt evidence
+Finalized success requires matching dispatch evidence for the correct extrinsic in canonical finalized chain state. Another extrinsic's event cannot confirm it. Unknown/no-hash outcomes remain unknown; recover before retrying. Late callbacks cannot demote terminal outcomes.
 
-Inclusion is not finality. A finalized label requires successful dispatch for this extrinsic index and canonical finality. Another extrinsic's success cannot confirm it. Unknown/no-hash outcomes remain Unknown and must be checked before retrying. Late callbacks cannot demote confirmed receipts.
+Imports are size/schema/network checked. Imported success, payer and charged-fee claims require re-verification. Identity matching prevents repeated backups from duplicating receipts; legacy V3 rows without genesis are treated as V3 only for identity comparison. Explicit other networks stay separate. Missing/pruned history stays unverified.
 
-Recovery saves inclusion hints and bounded search checkpoints. RPC calls have time bounds. Pruned history is unverified. Imported JSON is size/schema/network checked, rendered as plain React text, and cannot confer successful status without rechecking the chain. Explorer paths accept validated identifiers only.
+## Cloud authorization and publication
 
-## Storage and operational limits
+Wallet messages bind origin, account, action, normalized payload and nonce. Single-use authorization and database mutations are atomic, with retained results for identical verified retries. Revision checks, quotas and accepted invitations are enforced server-side. Revoked users cannot continue writing from a stale tab.
 
-Projects and receipts are browser-local, not encrypted custody or a server archive. Export backups before clearing site data. Storage failure is surfaced with an export link. Portova operates no indexer, faucet or bridge. Public RPC availability and testnet administration remain external dependencies.
+Publishing is explicit; private/hidden records are excluded from public reads. Evidence is tied to revision/network and is distinct from operator review. Public data already downloaded and on-chain history cannot be recalled. Browser drafts/receipts are not encrypted custody or a server backup.
 
-Automated wallet tests use fake adapters and execute the actual submission helper. Read-only evidence capture queries the public chain. No human extension signature or new treasury transfer was executed in this update. See [QA](submission/QA.md) for the remaining manual checks.
+## Service boundaries
 
+Required public/cloud endpoints use Redis rate controls; identifiers use salted trusted-proxy digests. Production documents use per-request CSP nonces, framing restrictions and other response headers. Server secrets are never public environment variables. Operational endpoints require a private bearer secret. Workers read chain state and never sign or broadcast.
 
-## October 28 cloud boundary
+Disabled crypto checkout remains guarded by release policy and environment configuration. Its verification code binds the invoice, payer, exact canonical finalized USDC transfer, recipient, amount and time window. Credits are unique/idempotent; there are no allowances, merchant signing keys or automated debits. Payment code is retained because it is referenced and tested, but code presence does not mean checkout is active.
 
-Optional project storage now adds server routes, Postgres and Redis. Each private read/write uses a single-use wallet message challenge; cloud updates compare owner and revision. Public access is opt-in and revoked by an authenticated unpublished save. Server secrets never use NEXT_PUBLIC variables. Shared caching applies only to finalized discovery; signing reads remain direct. See [CLOUD_PROJECTS.md](CLOUD_PROJECTS.md) for provisioning, limitations and acceptance checks.
+Mainnet, embedded bridging and automatic revenue routing are not implemented. RPC availability, runtime administration, provider quotas, index coverage and best-effort scheduling remain operational dependencies.
 
-
-## November 1 production foundations
-
-Cloud commands execute under one PostgreSQL transaction with retained idempotent results. Signatures are verified on every delivery, including retries. Accepted invitations, viewer/editor permissions, owner-only publishing/access changes and a two-party workspace transfer are enforced in the database. A canceled Team plan makes existing editors read-only. This does not grant chain authority. Project creation quotas are checked under an account advisory lock.
-
-Public reads and signing endpoints have client/account/global rate controls; client identifiers use the hosting provider's trusted forwarded header and a salted digest. Public data is not cached beyond revocation. Stripe is removed. Optional crypto billing verifies an invoice-bound EVM wallet proof and the exact canonical finalized Base USDC transfer. Transaction hashes are unique across invoices, credits are atomic/idempotent, and prepaid terms do not overlap. Payer hashes are reserved only after transfer details are verified. No allowances or merchant private keys are used. Checkout remains behind an explicit operator flag.
-
-Document rendering is dynamic with per-request CSP nonces; production inline-script permission is removed. The reviewed runtime baseline is Portaldot V3 testnet spec 3002, observed November 1. Unreviewed versions pause signing and worker ingestion. Operator health and worker routes require a private bearer secret; workers never sign or broadcast transactions.
-
-Isolated PostgreSQL tests cover permissions, quota enforcement, authorization rollback, replay results, revision conflicts and indexer/monitor checkpoint consistency. They do not substitute for a human wallet matrix, deployed-provider tests, an independent audit, load tests or restore drills. See PRODUCTION_RUNBOOK.md.
+See [QA](submission/QA.md) for accepted/unverified scenarios and the [runbook](PRODUCTION_RUNBOOK.md) for backups, incidents and real-value launch gates.
