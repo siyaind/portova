@@ -60,7 +60,7 @@ export async function reviewCall<T>(input: {
     const room = feeHeadroom(spendable, nativeNeed, shortfall);
     if (room === "short") {
       return refuse(
-        `This account can spend ${shown(spendable, decimals, symbol)} after frozen funds and the existential deposit. This call needs ${shown(nativeNeed, decimals, symbol)}, including the fee estimate and a policy reserve.`,
+        `Insufficient balance. This account can spend ${shown(spendable, decimals, symbol)} after frozen funds and the existential deposit. This call needs ${shown(nativeNeed, decimals, symbol)}, including the fee estimate and a policy reserve.`,
       );
     }
     if (room === "marginal") {

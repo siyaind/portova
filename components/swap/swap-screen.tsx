@@ -137,18 +137,21 @@ export function SwapScreen() {
   }, [amountIn, assetIn, assetOut, chain.getApi, expiredKey, pool, quoteKey, usable]);
 
   const minimum = liveQuote && /^\d+$/.test(liveQuote) ? applySlippage(BigInt(liveQuote), slippage) : null;
-  const fundingKey = signer && quoteKey && minimum !== null ? `${quoteKey}:${signer.address}:${signer.source}:${wallet.getVersion()}:${minimum}:${fundingRefresh}` : "";
+  // A missing quote must not suppress an input balance error. The placeholder
+  // minimum is used only to estimate a call's fee; it is never signed or sent.
+  const fundingMinimum = minimum && minimum > 0n ? minimum : 1n;
+  const fundingKey = signer && quoteKey ? `${quoteKey}:${signer.address}:${signer.source}:${wallet.getVersion()}:${minimum ?? "unquoted"}:${fundingRefresh}` : "";
   const fundingChecked = !!fundingKey && funding?.key === fundingKey;
   const fundingError = fundingChecked ? funding?.error : null;
   const settled = txs.items.filter(row => row.account === signer?.address && ["finalized", "failed"].includes(row.status)).map(row => `${row.id}:${row.status}`).join("|");
   useEffect(() => {
     setFunding(null);
     const api = chain.getApi();
-    if (!api || chain.status !== "live" || !signer || !assetIn || !assetOut || !amountIn || !minimum || !fundingKey || amountError) return;
+    if (!api || chain.status !== "live" || !signer || !assetIn || !assetOut || !amountIn || !fundingKey || amountError) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, minimum, signer.address);
+        const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, fundingMinimum, signer.address);
         const review = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n]);
         let error: string | null = review.ok ? null : review.message;
         if (review.ok && assetIn.kind === "asset") {
@@ -159,7 +162,7 @@ export function SwapScreen() {
           if (minimumBalance === null) error = "The token minimum balance is unavailable. Refresh the balance check.";
           else {
             const remainder = assetRemainder(balance, amountIn, minimumBalance);
-            if (remainder === "short") error = "Not enough token balance for this swap.";
+            if (remainder === "short") error = "Insufficient token balance for this swap. Enter a smaller amount.";
             if (remainder === "dust") error = "This swap would leave the token below its minimum balance.";
           }
         }
@@ -167,7 +170,7 @@ export function SwapScreen() {
       })().catch(() => { if (!cancelled) setFunding({key:fundingKey,error:"Balance and network fee could not be checked. Refresh the balance check before swapping."}); });
     }, 300);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [fundingKey, chain.status, chain.getApi, assetIn, assetOut, amountIn, minimum, signer?.address, signer?.source, amountError, settled]);
+  }, [fundingKey, chain.status, chain.getApi, assetIn, assetOut, amountIn, fundingMinimum, signer?.address, signer?.source, amountError, settled]);
   const quoteSecondsLeft = quotedAt === null ? null : Math.max(0, Math.ceil((QUOTE_EXPIRY_MS - (now - quotedAt)) / 1000));
 
   useEffect(() => {
@@ -365,7 +368,7 @@ export function SwapScreen() {
               <div className="swap-amount-box"><div className="swap-amount-label"><span>You pay</span><span className="swap-asset-badge"><Coins size={13} />{assetIn ? assetLabel(assetIn, maps.symbols) : "—"}</span></div>
               <input
                 aria-label="Amount to swap"
-                aria-invalid={!!amountError}
+                aria-invalid={!!amountError || !!fundingError}
                 className="swap-amount-input"
                 inputMode="decimal"
                 value={amount}
@@ -408,7 +411,7 @@ export function SwapScreen() {
               >
                 {busy ? costReview ? "Review open…" : "Waiting for wallet and chain…" : signer ? "Swap" : "Connect Substrate wallet"}
               </button>
-              {signer && liveQuote && <div className="space-y-2 text-xs"><p role="status" className={fundingError ? "text-warn" : "text-muted"}>{fundingError ?? (fundingChecked ? "Balance and network fee checked. They are checked again before signing." : "Checking available balance and network fee…")}</p><button type="button" className="text-violet underline" disabled={busy} onClick={() => setFundingRefresh(n=>n+1)}>Refresh balance check</button></div>}
+              {signer && quoteKey && !amountError && <div className="space-y-2 text-xs"><p role="status" className={fundingError ? "text-warn" : "text-muted"}>{fundingError ?? (fundingChecked ? liveQuote ? "Balance and network fee checked. They are checked again before signing." : "Balance and network fee checked. A valid quote is still required before swapping." : "Checking available balance and network fee…")}</p><button type="button" className="text-violet underline" disabled={busy} onClick={() => setFundingRefresh(n=>n+1)}>Refresh balance check</button></div>}
               <p className="text-xs leading-5 text-faint">
                 {expiredKey === quoteKey && quoteKey
                   ? "This quote has expired. Change the amount to request another."

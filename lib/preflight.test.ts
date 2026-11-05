@@ -56,7 +56,10 @@ test("the swap funding precheck refuses the reported giant tPOT input and includ
     accountAt:async()=>({free:(353n*unit).toString(),reserved:"0",frozen:0n,existentialDeposit:unit.toString()})});
   const huge = await run(99999999n*unit);
   assert.equal(huge.ok,false);
-  if (!huge.ok) assert.match(huge.message,/wallet was not opened/);
+  if (!huge.ok) assert.match(huge.message,/Insufficient balance\..*wallet was not opened/);
+  const overBalance = await run(400n*unit);
+  assert.equal(overBalance.ok,false);
+  if (!overBalance.ok) assert.match(overBalance.message,/Insufficient balance\./);
   assert.equal((await run(352n*unit)).ok,false); // Exact spendable is insufficient once fees are included.
   assert.equal((await run(unit/10n)).ok,true);
 });
