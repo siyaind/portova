@@ -2,7 +2,7 @@
 
 A workspace for launching and operating native assets on Portaldot V3 Testnet. Create tokens and NFT collections, manage liquidity, and coordinate a project with private cloud storage, team permissions and monitored changes.
 
-[Live website](https://portova.vercel.app) · [Documentation](docs/README.md) · [Roadmap](ROADMAP.md) · [Demo guide](docs/DEMO.md)
+[Live website](https://portova.vercel.app) · [Watch the demo](https://youtu.be/f6bW3Snw7jA) · [Pitch deck](https://portova.vercel.app/portova-pitch-deck.pdf) · [Documentation](docs/README.md) · [Roadmap](ROADMAP.md)
 
 ## Features
 
@@ -84,7 +84,7 @@ The application checks network identity and pauses signing on an unreviewed runt
 | `scripts/` | Database migrations, workers, backups and evidence tools |
 | `.github/workflows/` | CI and scheduled indexing/monitoring |
 | `docs/` | Architecture, setup, security, operations and validation |
-| `public/demo/` | Published historical walkthrough, retained while the final demo is recorded |
+| `public/demo/` | Final demo/deck page and an explicitly historical walkthrough |
 
 ## Deployment and evidence
 

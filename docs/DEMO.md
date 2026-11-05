@@ -1,5 +1,7 @@
 # Three-minute Portova demo script
 
+Final recording: [Portova demo, 2:52](https://youtu.be/f6bW3Snw7jA). The script below documents its presentation plan. Submission deck: [PDF](https://portova.vercel.app/portova-pitch-deck.pdf).
+
 Use the current live testnet application: https://portova.vercel.app. The narration below is 338 words. Treat the timestamps as editing slots and export the final cut at 2:58–2:59, safely below three minutes.
 
 ## Recording preparation

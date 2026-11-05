@@ -12,12 +12,12 @@ Track: Ecosystem DApps, Portaldot Hacker House 2026. Confirm current requirement
 
 ## Final delivery
 
-- [ ] Record the final walkthrough using the [demo guide](../DEMO.md), including workspace collaboration and actual monitoring alerts.
-- [ ] Upload the recording and test playback without signing in. Replace any placeholder/old demo link in the event entry.
-- [ ] Finalize the team's pitch deck and provide an accessible PDF/public URL, not text in a link field.
+- [x] Final recording provided: [Portova demo](https://youtu.be/f6bW3Snw7jA), 2:52. Public player access and duration verified.
+- [x] Submission pitch deck prepared: [PDF](https://portova.vercel.app/portova-pitch-deck.pdf).
+- [ ] Replace any placeholder/old video or deck link in the event entry with the final links above.
 - [ ] Review team details, overview, website/repository links and feature claims.
 - [ ] Confirm event requirements, submit/update the entry and retain the confirmation.
 
-Use the current example: asset **644897333**, collection **24**, **LP 17**, published cloud Revision **10**. The older `/demo/index.html` walkthrough is explicitly historical and remains available until the final recording replaces it.
+Use the current example: asset **644897333**, collection **24**, **LP 17**, published cloud Revision **10**. `/demo/index.html` links to the final demo and deck. The older MP4 is historical supplementary material.
 
 Keep testnet/free-pilot scope, disabled checkout and external bridging accurate. Do not claim paid traction, reviewed profiles, leaderboard users, guaranteed real-time monitoring or complete historical indexing. Manually unverified paths are not accepted demo evidence. The team should explain its product and contribution in its own words.

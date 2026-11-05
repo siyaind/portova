@@ -4,7 +4,7 @@ Updated November 5, 2026. Automated checks, read-only verification and human wal
 
 ## Automated and deployment checks
 
-The release at `2f7a0ff` passed all 142 tests, type checking, production build, GitHub CI and Vercel deployment. Coverage includes actual wallet submission orchestration through fake adapters, amount/fee guards, finalized receipt matching, NFT recovery, browser storage coordination and isolated PostgreSQL authorization/mutations.
+The November 5 acceptance release passed all 142 tests, type checking, production build, GitHub CI and Vercel deployment. Coverage includes actual wallet submission orchestration through fake adapters, amount/fee guards, finalized receipt matching, NFT recovery, browser storage coordination and isolated PostgreSQL authorization/mutations.
 
 Tests cover origin/account/source/genesis/runtime/draft changes; rejected/ambiguous outcomes; late callbacks; wrong extrinsic events; permission/quota/revision conflicts; atomic replay results; receipt import deduplication; fee budgeting; paginated discovery; and indexer/monitor checkpoint consistency. Fake adapters do not certify every wallet extension.
 
