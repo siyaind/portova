@@ -105,7 +105,7 @@ Use the current live testnet application: https://portova.vercel.app. The narrat
 
 > Portova is currently a free testnet pilot. Proposed Pro and Team plans focus on monitoring and collaboration. Checkout is disabled, and bridging remains external while we validate value with project teams.
 
-### 2:55–3:00 — Closing
+### 2:55–2:59 — Closing
 
 **Open:** https://portova.vercel.app/
 
@@ -125,4 +125,3 @@ Use the current live testnet application: https://portova.vercel.app. The narrat
 - The older https://portova.vercel.app/demo/index.html walkthrough is historical supplementary material; replace the event entry's video link with the new final recording.
 
 [QA record](submission/QA.md) · [Integration evidence](submission/EVIDENCE.md) · [Submission checklist](submission/CHECKLIST.md)
-
