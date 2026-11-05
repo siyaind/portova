@@ -73,6 +73,7 @@ export function OperationsWorkspace({
   const mounted = useRef(true),
     lock = useRef(false),
     context = useRef("");
+  const requestedConnection = useRef(false);
   context.current = JSON.stringify({
     selected,
     account,
@@ -103,11 +104,13 @@ export function OperationsWorkspace({
     setTickets([]);
     setSelected("");
     setPlan("free");
-    setMessage("");
+    setMessage(wallet.selected && requestedConnection.current ? "Wallet connected. Click Load my workspaces to approve the storage request and load your projects." : "");
+    if (wallet.selected) requestedConnection.current = false;
     setSupportNotice("");
   }, [wallet.selected?.address]);
   async function execute(payload: ProjectRequest) {
     if (!wallet.selected) {
+      requestedConnection.current = true;
       setMessage("Connect your Substrate wallet and select an account, then choose the operation again.");
       await wallet.connect();
       return;

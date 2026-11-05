@@ -105,7 +105,7 @@ export function ActivityScreen() {
     try {
       if (file.size > 2_000_000)
         throw new Error("Use a backup smaller than 2 MB.");
-      const added = txs.importBackup(await file.text());
+      const added = await txs.importBackup(await file.text());
       setMessage(
         `Imported ${added} new receipts. Imported outcomes are rechecked against the chain.`,
       );

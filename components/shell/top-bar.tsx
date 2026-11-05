@@ -17,7 +17,7 @@ import { receiptExplorerUrl } from "@/lib/explorer";
 import { shortAddress } from "@/lib/format";
 import { useConnection } from "wagmi";
 
-export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
+export function TopBar({ onOpenNav, navigationOpen = false }: { onOpenNav: () => void; navigationOpen?: boolean }) {
   const chain = useChain();
   const substrate = useSubstrateWallet();
   const evm = useConnection();
@@ -62,7 +62,7 @@ export function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
 
   return (
     <>
-      <header className="app-topbar sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-white/6 px-4 backdrop-blur-xl sm:gap-4 sm:px-7 lg:px-9">
+      <header style={{visibility:navigationOpen ? "hidden" : undefined}} className="app-topbar sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-white/6 px-4 backdrop-blur-xl sm:gap-4 sm:px-7 lg:px-9">
         <button
           type="button"
           className="rounded-md p-2 text-muted hover:bg-panel-2 hover:text-ink lg:hidden"

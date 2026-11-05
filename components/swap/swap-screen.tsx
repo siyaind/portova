@@ -63,6 +63,8 @@ export function SwapScreen() {
   const busyRef = useRef(false);
   const [costReview, setCostReview] = useState<{ fee: string; budget: string; total: string; expires: number; minimum: string } | null>(null);
   const [receipt, setReceipt] = useState<{ hash: string; block?: number } | null>(null);
+  const [funding, setFunding] = useState<{key:string; error:string|null} | null>(null);
+  const [fundingRefresh, setFundingRefresh] = useState(0);
   const approval = useRef<((accepted: boolean) => void) | null>(null);
   function closeReview(accepted: boolean) { approval.current?.(accepted); approval.current = null; setCostReview(null); }
   useEffect(() => () => { approval.current?.(false); }, []);
@@ -135,6 +137,37 @@ export function SwapScreen() {
   }, [amountIn, assetIn, assetOut, chain.getApi, expiredKey, pool, quoteKey, usable]);
 
   const minimum = liveQuote && /^\d+$/.test(liveQuote) ? applySlippage(BigInt(liveQuote), slippage) : null;
+  const fundingKey = signer && quoteKey && minimum !== null ? `${quoteKey}:${signer.address}:${signer.source}:${wallet.getVersion()}:${minimum}:${fundingRefresh}` : "";
+  const fundingChecked = !!fundingKey && funding?.key === fundingKey;
+  const fundingError = fundingChecked ? funding?.error : null;
+  const settled = txs.items.filter(row => row.account === signer?.address && ["finalized", "failed"].includes(row.status)).map(row => `${row.id}:${row.status}`).join("|");
+  useEffect(() => {
+    setFunding(null);
+    const api = chain.getApi();
+    if (!api || chain.status !== "live" || !signer || !assetIn || !assetOut || !amountIn || !minimum || !fundingKey || amountError) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const tx = buildSwapExactIn(api, assetIn, assetOut, amountIn, minimum, signer.address);
+        const review = await reviewExtrinsic(api, tx, signer.address, [assetIn.kind === "native" ? amountIn : 0n]);
+        let error: string | null = review.ok ? null : review.message;
+        if (review.ok && assetIn.kind === "asset") {
+          const at = await api.at(review.blockHash);
+          const holding = await at.query.assets.account(assetIn.id, signer.address) as unknown as {isNone:boolean;unwrap():{balance:{toString():string}}};
+          const balance = holding.isNone ? 0n : BigInt(holding.unwrap().balance.toString());
+          const minimumBalance = await readAssetMinBalance(api, assetIn.id, review.blockHash);
+          if (minimumBalance === null) error = "The token minimum balance is unavailable. Refresh the balance check.";
+          else {
+            const remainder = assetRemainder(balance, amountIn, minimumBalance);
+            if (remainder === "short") error = "Not enough token balance for this swap.";
+            if (remainder === "dust") error = "This swap would leave the token below its minimum balance.";
+          }
+        }
+        if (!cancelled) setFunding({key:fundingKey,error});
+      })().catch(() => { if (!cancelled) setFunding({key:fundingKey,error:"Balance and network fee could not be checked. Refresh the balance check before swapping."}); });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [fundingKey, chain.status, chain.getApi, assetIn, assetOut, amountIn, minimum, signer?.address, signer?.source, amountError, settled]);
   const quoteSecondsLeft = quotedAt === null ? null : Math.max(0, Math.ceil((QUOTE_EXPIRY_MS - (now - quotedAt)) / 1000));
 
   useEffect(() => {
@@ -185,6 +218,10 @@ export function SwapScreen() {
     setReceipt(null);
     if (!signer) {
       await wallet.connect();
+      return;
+    }
+    if (!fundingChecked || fundingError) {
+      setMessage(fundingError ?? "Wait for the balance and network fee check before swapping.");
       return;
     }
     if (quotedAt === null || quoteExpired(quotedAt, Date.now())) {
@@ -365,12 +402,13 @@ export function SwapScreen() {
               ) : null}
               <button
                 type="button"
-                disabled={busy || !usable || !liveQuote}
+                disabled={busy || !usable || !liveQuote || (!!signer && (!fundingChecked || !!fundingError))}
                 onClick={() => void onSwap()}
                 className="w-full rounded-lg bg-violet px-3 py-2.5 text-sm font-medium text-violet-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? costReview ? "Review open…" : "Waiting for wallet and chain…" : signer ? "Swap" : "Connect Substrate wallet"}
               </button>
+              {signer && liveQuote && <div className="space-y-2 text-xs"><p role="status" className={fundingError ? "text-warn" : "text-muted"}>{fundingError ?? (fundingChecked ? "Balance and network fee checked. They are checked again before signing." : "Checking available balance and network fee…")}</p><button type="button" className="text-violet underline" disabled={busy} onClick={() => setFundingRefresh(n=>n+1)}>Refresh balance check</button></div>}
               <p className="text-xs leading-5 text-faint">
                 {expiredKey === quoteKey && quoteKey
                   ? "This quote has expired. Change the amount to request another."

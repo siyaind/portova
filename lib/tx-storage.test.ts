@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { exportReceipts, importReceipts, mergeReceipts, parseTxs, patchTx, type TrackedTx } from "./tx-storage.ts";
+import { exportReceipts, importReceipts, mergeReceipts, mergeLiveReceipts, commitReceiptImport, TX_STORAGE_KEY, parseTxs, patchTx, type TrackedTx } from "./tx-storage.ts";
+import { TESTNET_GENESIS } from "./network.ts";
 import { receiptExplorerUrl, blockExplorerUrl } from "./explorer.ts";
 const hash = `0x${"ab".repeat(32)}`, genesis = `0x${"cd".repeat(32)}`;
 const row: TrackedTx = { id: "one", label: "Withdraw", status: "included", hash, genesisHash: genesis, blockNumber: 1, searchCursor: 50, fromBlock: 0 };
@@ -33,6 +34,37 @@ test("repeated imports are idempotent for cancelled attempts without a hash, inc
   assert.equal(mergeReceipts(first, importReceipts(exportReceipts(first, genesis), genesis)).length, 1);
   assert.equal(first[0].status, "ambiguous");
   assert.equal(mergeReceipts(first, importReceipts(exportReceipts([{...cancelled, id:"different-attempt"}], genesis), genesis)).length, 2);
+});
+
+test("legacy V3 receipts without genesis match a network-scoped backup on its first import", () => {
+  const legacy: TrackedTx[] = Array.from({length:24}, (_,i)=>({id:`legacy-${i}`,label:`Attempt ${i}`,status:i<18?"finalized":"ambiguous",hash:i<18?`0x${i.toString(16).padStart(64,"0")}`:undefined,createdAt:i,actualFee:i<18?"100":undefined}));
+  let raw = JSON.stringify(legacy);
+  const storage = {getItem:(key:string)=>{assert.equal(key,TX_STORAGE_KEY);return raw;},setItem:(_key:string,value:string)=>{raw=value;}};
+  const backup = exportReceipts(legacy, TESTNET_GENESIS);
+  const first = commitReceiptImport(storage,legacy,importReceipts(backup,TESTNET_GENESIS));
+  assert.equal(first.added,0); assert.equal(first.items.length,24);
+  assert.equal(first.items.find(item=>item.id==="legacy-0")?.actualFee,"100");
+  assert.equal(commitReceiptImport(storage,first.items,importReceipts(backup,TESTNET_GENESIS)).added,0);
+  const more = importReceipts(exportReceipts([...legacy,{id:"new-attempt",label:"New",status:"ambiguous"}],TESTNET_GENESIS),TESTNET_GENESIS);
+  const added = commitReceiptImport(storage,first.items,more);
+  assert.equal(added.added,1); assert.equal(JSON.parse(raw).length,25);
+});
+
+test("legacy duplicate aliases converge during persistence without dropping distinct attempts or mixing explicit networks", () => {
+  const legacy: TrackedTx = {id:"original",label:"Cancelled",status:"ambiguous",createdAt:1};
+  const imported = importReceipts(exportReceipts([legacy],TESTNET_GENESIS),TESTNET_GENESIS)[0];
+  const distinct = {...legacy,id:"another-attempt"};
+  assert.equal(mergeLiveReceipts([legacy,imported,distinct],[]).length,2);
+  const withHash = {...legacy,hash,status:"finalized" as const,actualFee:"100"};
+  const importedHash = importReceipts(exportReceipts([withHash],TESTNET_GENESIS),TESTNET_GENESIS)[0];
+  const merged = mergeLiveReceipts([withHash,importedHash],[]);
+  assert.equal(merged.length,1); assert.equal(merged[0].status,"finalized"); assert.equal(merged[0].actualFee,"100");
+  assert.equal(mergeLiveReceipts([withHash],[{...withHash,genesisHash:genesis}]).length,2);
+});
+
+test("an import storage failure never reports a successful committed count", () => {
+  const storage = {getItem:()=>null,setItem:()=>{throw Error("quota");}};
+  assert.throws(()=>commitReceiptImport(storage,[],importReceipts(exportReceipts([row],genesis),genesis)),/quota/);
 });
 
 test("explorer links validate the full receipt or block identifier", () => {

@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useChain } from "@/components/chain/chain-provider";
 import { useSubstrateWallet } from "@/components/wallet/substrate-wallet";
 import { TESTNET_GENESIS } from "@/lib/network";
-import { TX_STORAGE_KEY, normalizeTx, parseTxs, patchTx, importReceipts, mergeReceipts, mergeLiveReceipts, type TrackedTx } from "@/lib/tx-storage";
+import { TX_STORAGE_KEY, normalizeTx, parseTxs, patchTx, importReceipts, commitReceiptImport, mergeLiveReceipts, type TrackedTx } from "@/lib/tx-storage";
 import { withBrowserLock } from "@/lib/browser-lock";
 import { reconcileReceipt } from "@/lib/tx-reconcile";
 import { outcomeAfterWait } from "@/lib/tx-result";
@@ -18,7 +18,7 @@ export function txStatusLabel(status: string): string {
 type TxValue = {
   ready: boolean; items: TrackedTx[]; storageError: string | null; recovering: boolean;
   push: (item: TrackedTx) => void; patch: (id: string, update: Partial<TrackedTx>) => void;
-  requestRecovery: (id: string, enabled?: boolean) => void; importBackup: (raw: string) => number;
+  requestRecovery: (id: string, enabled?: boolean) => void; importBackup: (raw: string) => Promise<number>;
 };
 const TxContext = createContext<TxValue | null>(null);
 
@@ -71,11 +71,16 @@ export function TxProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const patch = useCallback((id: string, update: Partial<TrackedTx>) => setItems((current) => current.map((item) => item.id === id ? patchTx(item, { ...update, updatedAt: Date.now(), changeId: crypto.randomUUID() }) : item)), []);
   const requestRecovery = useCallback((id: string, enabled = true) => patch(id, { recoveryRequested: enabled, checkedAt: undefined, recoveryMessage: enabled ? "Searching the connected chain…" : "Older-block search paused." }), [patch]);
-  const importBackup = useCallback((raw: string) => {
+  const importBackup = useCallback(async (raw: string) => {
     const incoming = importReceipts(raw, TESTNET_GENESIS);
-    const merged = mergeReceipts(itemsRef.current, incoming);
-    const added = merged.length - itemsRef.current.length;
-    setItems(current => mergeReceipts(current, incoming)); return added;
+    await persistQueue.current;
+    const result = await withBrowserLock("portova:receipts", () => commitReceiptImport(window.localStorage, itemsRef.current, incoming));
+    if (alive.current) {
+      itemsRef.current = mergeLiveReceipts(itemsRef.current, result.items);
+      setItems(current => mergeLiveReceipts(current, result.items));
+      setStorageError(null);
+    }
+    return result.added;
   }, []);
 
   useEffect(() => {

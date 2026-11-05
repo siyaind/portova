@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { useChain } from "@/components/chain/chain-provider";
@@ -63,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarFooter />
         </aside>
         <div className="relative z-0 flex min-w-0 flex-1 flex-col" inert={navOpen || undefined}>
-          <TopBar onOpenNav={() => setNavOpen(true)} />
+          <TopBar onOpenNav={() => setNavOpen(true)} navigationOpen={navOpen} />
           <main id="main" className="app-main mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-7 sm:px-7 lg:px-9 lg:py-9">
             {children}
             <div className="mt-8"><DiscoveryStatus /></div>
@@ -71,9 +72,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="app-bottom-bar"><span>Made for what comes next.</span><span>Portova <span className="text-violet">/</span> Portaldot V3 Testnet</span></div>
         </div>
       </div>
-      {navOpen ? (
-        <div className="fixed inset-0 z-40 flex lg:hidden">
-          <aside ref={navRef} className="app-sidebar mobile-sidebar relative z-10 flex h-full w-[min(100%,18rem)] shrink-0 flex-col" style={{background: "#15121b"}} role="dialog" aria-modal="true" aria-label="Navigation">
+      {navOpen ? createPortal(
+        <div className="fixed inset-0 z-[80] flex lg:hidden" style={{isolation:"isolate"}}>
+          <aside ref={navRef} className="app-sidebar mobile-sidebar relative z-10 flex h-full w-[min(100%,18rem)] shrink-0 flex-col" style={{background: "#15121b",backdropFilter:"none",WebkitBackdropFilter:"none"}} role="dialog" aria-modal="true" aria-label="Navigation">
             <div className="flex items-center justify-between pr-3">
               <div className="app-brand-wrap"><Brand compact /></div>
               <button
@@ -94,7 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="min-h-full min-w-0 flex-1 bg-black/70"
             onClick={() => setNavOpen(false)}
           />
-        </div>
+        </div>, document.body
       ) : null}
     </div>
   );

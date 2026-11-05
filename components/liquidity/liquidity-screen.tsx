@@ -223,7 +223,7 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
       {projectId && message && <p role="status" className="text-sm leading-6 text-warn">{message}</p>}
       {reviewPrompt && <TransactionReview title={`Review ${reviewPrompt.label.toLowerCase()}`} expiresAt={reviewPrompt.expires} onConfirm={() => closeReview(true)} onCancel={() => closeReview(false)}><p className="text-sm text-muted">{reviewPrompt.label === "Add liquidity" ? `Deposit ${amount1} ${pool ? assetLabel(pool.asset1, maps.symbols) : ""} + ${amount2} ${pool ? assetLabel(pool.asset2, maps.symbols) : ""}. A missing LP account is prepared in the same transaction; its deposit is reserved, not spent as a fee.` : reviewPrompt.label === "Remove liquidity" ? `Burn ${lpAmount} LP units. Max withdraws your balance; the pool's permanently locked minimum liquidity remains.` : `Create ${assetLabel(left, maps.symbols)} / ${assetLabel(right, maps.symbols)}. Setup fee ${creationCosts ? formatUnits(creationCosts.setup.toString(), 14) : "unavailable"} tPOT; pool account deposits reserved ${creationCosts ? formatUnits(creationCosts.reserved.toString(), 14) : "unavailable"} tPOT. Adding liquidity is separate.`}</p><p className="text-sm">Estimated network fee: {formatUnits(reviewPrompt.fee, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Fee budget: {formatUnits(reviewPrompt.reserve, NATIVE_DECIMALS, 10)} tPOT</p><p className="text-sm">Total native balance needed, including deposits/transfers: {formatUnits(reviewPrompt.total, NATIVE_DECIMALS, 10)} tPOT</p></TransactionReview>}
       <Panel className="p-4">
-        {poolLp && !pool && <p role="status" className="mb-3 text-sm text-warn">LP #{poolLp} is not in the loaded pool snapshot. Refresh discovery to load it; no different pool has been selected.</p>}
+        {poolLp && !pool && <p role="status" className="mb-3 text-sm text-warn">{chain.status === "connecting" || chain.discovery.pools.loading || (!chain.discovery.pools.complete && !chain.discovery.pools.error) ? `Loading the pool snapshot for LP #${poolLp}…` : `LP #${poolLp} is not in the loaded pool snapshot. Refresh discovery to load it; no different pool has been selected.`}</p>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium">Stored pools</h2>
           <StatusPill tone={chain.status === "connecting" || chain.pools === null ? "warn" : chain.poolCount === 0 ? "muted" : "ok"}>
@@ -232,7 +232,8 @@ export function LiquidityScreen({ projectId, assetId }: { projectId?: string; as
         </div>
         {chain.pools === null ? (
           <p className="mt-3 text-sm text-muted">
-            {chain.status === "connecting" ? "Reading pools from the testnet." : "The pool list is unavailable."}
+            {chain.status === "connecting" || chain.discovery.pools.loading || (!chain.discovery.pools.complete && !chain.discovery.pools.error) ? "Reading pools from the testnet…" : "Pool discovery could not finish. Refresh to try again."}
+            <button className="mt-2 block text-violet underline disabled:opacity-40" disabled={chain.status !== "live" || chain.discovery.pools.loading} onClick={() => void chain.refreshPools().catch(() => undefined)}>Refresh pool discovery</button>
           </p>
         ) : chain.pools.length === 0 ? (
           <p className="mt-3 text-sm leading-6 text-muted">

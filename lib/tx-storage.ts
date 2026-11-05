@@ -1,4 +1,5 @@
 import { statusWithoutHash, type TxStatus } from "./tx-result.ts";
+import { TESTNET_GENESIS } from "./network.ts";
 
 export const TX_STORAGE_KEY = "portova.session-txs.v1";
 export type TrackedTx = {
@@ -59,16 +60,17 @@ export function parseTxs(raw: string | null, restorePending = true): TrackedTx[]
 
 /** Merge concurrent tabs by revision while preserving verified terminal outcomes and every receipt. */
 export function mergeLiveReceipts(left: TrackedTx[], right: TrackedTx[]): TrackedTx[] {
-  const rows = [...left];
-  for (const incoming of right) {
-    const index = rows.findIndex(row => row.id === incoming.id || (!!incoming.hash && row.hash === incoming.hash && row.genesisHash === incoming.genesisHash));
+  const rows: TrackedTx[] = [];
+  for (const incoming of [...left, ...right]) {
+    const keys = new Set(receiptKeys(incoming));
+    const index = rows.findIndex(row => receiptKeys(row).some(key => keys.has(key)));
     if (index < 0) { rows.push(incoming); continue; }
     const current = rows[index];
     const terminal = (row: TrackedTx) => row.status === "finalized" || row.status === "failed";
     if (terminal(current) && !terminal(incoming)) continue;
     const newer = (incoming.updatedAt ?? incoming.createdAt ?? 0) > (current.updatedAt ?? current.createdAt ?? 0)
       || ((incoming.updatedAt ?? incoming.createdAt ?? 0) === (current.updatedAt ?? current.createdAt ?? 0) && (incoming.changeId ?? "") > (current.changeId ?? ""));
-    if (newer || (!terminal(current) && terminal(incoming))) rows[index] = { ...patchTx(current, incoming), id: current.id };
+    if (newer || (!terminal(current) && terminal(incoming))) rows[index] = { ...patchTx(current, incoming), id: current.id, importIdentity: current.importIdentity ?? incoming.importIdentity };
   }
   return rows.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
@@ -111,5 +113,17 @@ export function mergeReceipts(current: TrackedTx[], incoming: TrackedTx[]): Trac
   return [...current, ...incoming.filter((item) => { const next = receiptKeys(item); if (next.some(key => keys.has(key))) return false; next.forEach(key => keys.add(key)); return true; })];
 }
 function receiptKeys(item: TrackedTx) {
-  return item.hash ? [`hash:${item.genesisHash ?? ""}:${item.hash}`] : [`record:${item.genesisHash ?? ""}:${item.id}`, ...(item.importIdentity ? [`record:${item.importIdentity}`] : [])];
+  // The original browser store was V3-only and omitted genesis on legacy rows.
+  // This is identity compatibility, not evidence that an imported outcome is verified.
+  const network = (item.genesisHash ?? TESTNET_GENESIS).toLowerCase();
+  return [`record:${network}:${item.id}`, ...(item.hash ? [`hash:${network}:${item.hash.toLowerCase()}`] : []),
+    ...(item.importIdentity?.startsWith(`${network}:`) ? [`record:${item.importIdentity}`] : [])];
+}
+
+export function commitReceiptImport(storage: Pick<Storage, "getItem" | "setItem">, memory: TrackedTx[], incoming: TrackedTx[]) {
+  const before = mergeLiveReceipts(parseTxs(storage.getItem(TX_STORAGE_KEY), false), memory);
+  const items = mergeReceipts(before, incoming);
+  const added = items.length - before.length;
+  storage.setItem(TX_STORAGE_KEY, JSON.stringify(items));
+  return { items, added };
 }

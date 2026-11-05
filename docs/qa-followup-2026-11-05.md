@@ -21,7 +21,18 @@ The published example links asset 644897333, collection 24 and pool LP 17. The o
 
 Local tests cover repeated hashless receipt import, signed receipt inclusion heights, precision feedback and pool reserve budgeting. Browser checks exercised direct swap reload and real discovery, zero/precision feedback, mobile links/drawer layering, and the actual review component's viewport bounds and automatic expiry in a temporary local harness. The harness was removed before production build. Browser proof screenshots stay in ignored local evidence storage.
 
-Worker workflow 41919208516 completed successfully: indexer height 279495, monitor checked three projects at block 325864, and payments checked/credited zero. This monitor block is after the owner's withdrawal at block 325751. The owner still needs to confirm the specific private reserve alert in their workspace; a successful worker run is not sufficient evidence of alert delivery. Historical indexing remains substantially behind and schedules remain best effort.
+Worker workflow 41919208516 completed successfully: indexer height 279495, monitor checked three projects at block 325864, and payments checked/credited zero. The owner subsequently confirmed both reserve-drop alerts at that block, including PQA 10000000000 → 7428374836 and tPOT 500000000000000 → 378649643839899, and the post-withdrawal export. R8 monitoring is now an owner-reported pass. Historical indexing remains substantially behind and schedules remain best effort.
+
+## Focused retest corrections
+
+The owner's 04:30–04:46 IST retest passed direct swap discovery, validation wording, receipt block numbers, withdrawal review expiry/cancellation, support acknowledgement, public LP links and refreshed role evidence at block 326689. Revision 10 was unchanged. Four remaining defects and a transient loading message were corrected:
+
+- Swap now checks finalized spendable native balance, the network fee reserve, and token balance/minimum remainder before enabling a connected wallet's Swap button. An unavailable check fails closed. The existing fresh review before signing remains required.
+- Receipt identity treats the original V3-only store's missing genesis as the V3 genesis for matching. Explicit other networks stay separate. Imports run under the receipt storage lock and report the number actually committed. Proven duplicate aliases converge; unrelated attempts are retained. Imported outcomes still require chain verification.
+- Workspace connection feedback survives the selected-account reset and explicitly asks the user to load workspaces after connecting. Connection alone does not sign a storage request.
+- The mobile app drawer is rendered at the document body with an opaque, isolated surface; the underlying header is hidden while it is open. Initial liquidity discovery now reports loading until discovery actually fails.
+
+All 142 automated tests passed, including the exact legacy case of 18 hashed and six hashless networkless records, repeated import, distinct-network separation, storage failure, and an unaffordable 99999999 tPOT preflight. In an isolated local browser, importing those 24 synthetic legacy records plus one new receipt produced 25 total and “Imported 1”; repeating produced 25 and “Imported 0”. At 390 × 844, the liquidity drawer logo was unobstructed. Synthetic receipts and the temporary fixture page were removed afterward. These checks do not substitute for the owner's focused live retest of the four corrections.
 
 NFT trading was runtime-disabled during the owner's test. Public minting, the exact collaborator-count boundary, and the profile review-request flow were not manually run. Automated checks do not turn these into human acceptance passes. A testnet pilot demo must retain these limits; reliable scheduling/backfill and operational backup/restore remain separate production work.
 
